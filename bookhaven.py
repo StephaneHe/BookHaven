@@ -337,6 +337,32 @@ def api_book_detail(book_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/books/<int:book_id>/classify-genre", methods=["POST"])
+@login_required
+def api_classify_genre(book_id):
+    """Ask the local LLM to classify a book's genre."""
+    try:
+        from genre_ai import classify_genre
+        conn = database.get_db()
+        book = conn.execute("SELECT id, title, author, genre FROM books WHERE id = ?", (book_id,)).fetchone()
+        if not book:
+            conn.close()
+            return jsonify({"error": "Book not found"}), 404
+
+        genre = classify_genre(book["title"], book["author"])
+        if not genre:
+            conn.close()
+            return jsonify({"error": "AI classification unavailable (is Ollama running?)"}), 503
+
+        conn.execute("UPDATE books SET genre = ?, modified_at = CURRENT_TIMESTAMP WHERE id = ?", (genre, book_id))
+        conn.commit()
+        conn.close()
+        return jsonify({"genre": genre})
+    except Exception as e:
+        logger.error(f"Error in classify_genre: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/filters")
 @login_required
 def api_filters():

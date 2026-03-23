@@ -13,6 +13,8 @@ try:
 except ImportError:
     HAS_RARFILE = False
 
+from genre_ai import classify_genre
+
 try:
     from PIL import Image
     HAS_PIL = True
@@ -169,6 +171,33 @@ def _get_category(lib_path):
     return config.CATEGORY_MAP.get(folder_name, folder_name)
 
 
+_KNOWN_GENRES = {
+    "article", "autres", "aventure", "bit-lit", "drame", "espionnage",
+    "fantastique", "fantasy", "historique", "jeunesse", "philosophie",
+    "policier", "romance", "science-fiction", "thriller", "horreur",
+    "humour", "biographie", "essai", "poesie", "info",
+}
+
+
+def _genre_from_path(full_path):
+    """Infer genre from a subfolder whose name matches a known genre.
+
+    Example: H:\\Books\\Education\\philosophie\\book.pdf -> 'Philosophie'
+    Only assigns genre when the folder name is in _KNOWN_GENRES,
+    to avoid tagging series or author folders as genres.
+    """
+    for lib_path in config.LIBRARY_PATHS:
+        norm_lib = os.path.normpath(lib_path)
+        norm_full = os.path.normpath(full_path)
+        if norm_full.startswith(norm_lib + os.sep):
+            rel = os.path.relpath(norm_full, norm_lib)
+            parts = rel.split(os.sep)
+            for part in parts[:-1]:  # skip the filename itself
+                if part.lower() in _KNOWN_GENRES:
+                    return part.capitalize()
+    return ""
+
+
 def _extract_metadata(full_path, fname, ext, category, root):
     """Extract metadata based on file format."""
     meta = {
@@ -200,7 +229,15 @@ def _extract_metadata(full_path, fname, ext, category, root):
     meta["title"] = meta["title"].strip()
     meta["author"] = meta["author"].strip()
     meta["genre"] = meta["genre"].strip()
-    
+
+    # Fallback 1: infer genre from subfolder name if still empty
+    if not meta["genre"]:
+        meta["genre"] = _genre_from_path(full_path)
+
+    # Fallback 2: ask local LLM via Ollama
+    if not meta["genre"]:
+        meta["genre"] = classify_genre(meta["title"], meta["author"])
+
     return meta
 
 

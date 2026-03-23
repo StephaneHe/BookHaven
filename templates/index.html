@@ -233,6 +233,13 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   color: #ccc; word-break: break-all; flex: 1;
 }
 .modal-body .info-value.path { font-family: monospace; font-size: 12px; color: #999; }
+.ai-genre-btn {
+  background: #3a3a5c; color: #aab; border: 1px solid #555; border-radius: 6px;
+  padding: 2px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;
+  transition: background 0.2s;
+}
+.ai-genre-btn:hover { background: #7c8cf5; color: #fff; }
+.ai-genre-btn:disabled { opacity: 0.5; cursor: wait; }
 .modal-body .info-description {
   padding: 12px 0; border-bottom: 1px solid #1f1f35; font-size: 13px;
 }
@@ -1301,7 +1308,10 @@ async function showBookInfo(bookId) {
     add('Pages', b.page_count);
     add('Series', b.series ? b.series + (b.series_index ? ' #' + b.series_index : '') : '');
     add('Category', b.category);
-    add('Genre', b.genre);
+    // Genre row with AI classify button
+    html += '<div class="info-row"><span class="info-label">Genre</span><span class="info-value"><span id="modal-genre-val">' + esc(b.genre || '') + '</span>'
+      + '<button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="Ask AI to detect genre">AI</button>'
+      + '</span></div>';
     add('Size', b.file_size ? (b.file_size / 1024 / 1024).toFixed(1) + ' MB' : '');
     html += '</div></div>';
     // Description block
@@ -1323,6 +1333,30 @@ async function showBookInfo(bookId) {
 
 function closeBookInfo() {
   document.getElementById('book-info-modal').classList.remove('active');
+}
+
+async function classifyGenre(bookId) {
+  const btn = document.querySelector('.ai-genre-btn');
+  const genreEl = document.getElementById('modal-genre-val');
+  btn.disabled = true;
+  btn.textContent = '...';
+  try {
+    const r = await fetch('/api/books/' + bookId + '/classify-genre', { method: 'POST' });
+    const data = await r.json();
+    if (r.ok) {
+      genreEl.textContent = data.genre;
+      btn.textContent = 'OK';
+      btn.style.background = '#2a6';
+    } else {
+      btn.textContent = 'Error';
+      btn.style.background = '#a33';
+      alert(data.error || 'Classification failed');
+    }
+  } catch(e) {
+    btn.textContent = 'Error';
+    btn.style.background = '#a33';
+  }
+  setTimeout(() => { btn.textContent = 'AI'; btn.style.background = ''; btn.disabled = false; }, 3000);
 }
 
 async function removeFromReading(bookId) {
