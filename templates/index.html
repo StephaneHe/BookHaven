@@ -1389,6 +1389,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // Keyboard navigation in reader
   document.addEventListener('keydown', handleReaderKeys);
   checkAuth();
+  // Resume scan progress bar if a scan is already running
+  fetch('/api/scan/status').then(r => r.json()).then(s => {
+    if (s.running) pollScan();
+  }).catch(() => {});
 });
 
 // ── Open Book ───────────────────────────────────────────────

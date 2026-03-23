@@ -83,12 +83,12 @@ def scan_library(progress_callback=None):
             
             # Check if already scanned and unchanged
             row = conn.execute(
-                "SELECT id, file_size FROM books WHERE path = ?",
+                "SELECT id, file_size, genre FROM books WHERE path = ?",
                 (full_path,)
             ).fetchone()
-            
-            if row and row["file_size"] == file_size:
-                continue  # Already scanned, same size = skip
+
+            if row and row["file_size"] == file_size and row["genre"]:
+                continue  # Already scanned, same size, has genre = skip
             
             # Extract metadata based on format
             meta = _extract_metadata(full_path, fname, ext, category, root)
