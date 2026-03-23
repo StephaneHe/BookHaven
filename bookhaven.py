@@ -73,7 +73,7 @@ def test_login():
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
 
 # Scan state (simple in-memory tracking)
-scan_state = {"running": False, "current": 0, "total": 0, "message": ""}
+scan_state = {"running": False, "current": 0, "total": 0, "message": "", "cancel": False}
 
 # No-cover SVG placeholder (served inline, no file needed)
 NO_COVER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
@@ -650,21 +650,27 @@ def api_scan():
 
     def run_scan():
         scan_state["running"] = True
+        scan_state["cancel"] = False
         try:
             def cb(current, total, message):
                 scan_state["current"] = current
                 scan_state["total"] = total
                 scan_state["message"] = message
+                if scan_state["cancel"]:
+                    raise InterruptedError("Scan cancelled")
             result = scanner.scan_library(progress_callback=cb)
             scan_state["message"] = (
                 f"Done: {result['new']} new, {result['updated']} updated, "
                 f"{result['removed']} removed"
             )
+        except InterruptedError:
+            scan_state["message"] = "Scan cancelled"
         except Exception as e:
             scan_state["message"] = f"Error: {e}"
             logger.error(f"Scan error: {e}\n{traceback.format_exc()}")
         finally:
             scan_state["running"] = False
+            scan_state["cancel"] = False
 
     thread = threading.Thread(target=run_scan, daemon=True)
     thread.start()
@@ -675,6 +681,16 @@ def api_scan():
 @login_required
 def api_scan_status():
     return jsonify(scan_state)
+
+
+@app.route("/api/scan/stop", methods=["POST"])
+@login_required
+def api_scan_stop():
+    """Cancel a running scan."""
+    if scan_state["running"]:
+        scan_state["cancel"] = True
+        return jsonify({"ok": True, "message": "Cancelling scan..."})
+    return jsonify({"ok": False, "message": "No scan running"})
 
 
 

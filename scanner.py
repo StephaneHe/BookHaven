@@ -74,7 +74,7 @@ def scan_library(progress_callback=None):
     for idx, (full_path, fname, ext, category, root) in enumerate(all_files):
         found_paths.add(full_path)
         
-        if progress_callback and idx % 50 == 0:
+        if progress_callback:
             progress_callback(idx, total, f"Scanning: {fname[:60]}")
         
         try:

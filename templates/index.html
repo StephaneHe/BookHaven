@@ -773,6 +773,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 
   <div class="scan-banner" id="scan-banner">
     <span id="scan-message">Scanning...</span>
+    <button class="secondary" id="scan-stop-btn" onclick="stopScan()" style="padding:2px 10px;font-size:12px;margin-left:8px">Stop</button>
     <div class="scan-progress"><div class="fill" id="scan-progress-fill"></div></div>
   </div>
 
@@ -1744,6 +1745,14 @@ async function triggerScan() {
   } catch(e) {}
 }
 
+async function stopScan() {
+  try {
+    await fetch('/api/scan/stop', { method: 'POST' });
+    document.getElementById('scan-message').textContent = 'Cancelling...';
+    document.getElementById('scan-stop-btn').disabled = true;
+  } catch(e) {}
+}
+
 function pollScan() {
   const banner = document.getElementById('scan-banner');
   banner.classList.add('active');
@@ -1751,7 +1760,8 @@ function pollScan() {
     try {
       const r = await fetch('/api/scan/status');
       const s = await r.json();
-      document.getElementById('scan-message').textContent = s.message || 'Scanning...';
+      const count = s.total > 0 ? s.current + '/' + s.total + ' — ' : '';
+      document.getElementById('scan-message').textContent = count + (s.message || 'Scanning...');
       const pct = s.total > 0 ? (s.current / s.total * 100) : 0;
       document.getElementById('scan-progress-fill').style.width = pct + '%';
       if (!s.running) {
