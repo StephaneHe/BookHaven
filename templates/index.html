@@ -1403,6 +1403,15 @@ async function openBook(id) {
     document.getElementById('reader-title').textContent = state.currentBook.title;
     showView('reader-view');
 
+    // Ensure a reading progress entry exists (so it appears in Continue Reading)
+    if (!state.currentBook.progress) {
+      fetch(`/api/books/${id}/progress`, {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ progress: 0, current_location: '' }),
+      }).catch(() => {});
+    }
+
     const fmt = state.currentBook.format;
     // Hide all reader containers
     document.getElementById('epub-container').style.display = 'none';
@@ -1425,8 +1434,8 @@ async function openBook(id) {
 }
 
 async function closeReader() {
-  // Save progress before closing - MUST await to ensure DB is updated
-  await saveCurrentProgress();
+  // Save progress in background - don't block UI
+  saveCurrentProgress();
   // Clean up readers
   if (state.epubBook) {
     try { state.epubBook.destroy(); } catch(e) {}

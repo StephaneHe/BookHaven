@@ -130,9 +130,7 @@ def scan_library(progress_callback=None):
                       meta.get("page_count", 0), meta.get("description", "")))
                 new_count += 1
             
-            # Commit in batches
-            if (new_count + updated_count) % config.SCAN_BATCH_SIZE == 0:
-                conn.commit()
+            conn.commit()
                 
         except Exception as e:
             logger.error(f"Error scanning {full_path}: {e}")
