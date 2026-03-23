@@ -1,5 +1,4 @@
 """Genre classification via local LLM (Ollama)."""
-import json
 import logging
 import requests
 
@@ -10,29 +9,36 @@ MODEL = "llama3.1:latest"
 TIMEOUT = 30  # seconds
 
 KNOWN_GENRES = [
-    "Article", "Aventure", "Biographie", "Bit-Lit", "Drame", "Espionnage",
-    "Essai", "Fantastique", "Fantasy", "Historique", "Horreur", "Humour",
-    "Jeunesse", "Philosophie", "Policier", "Poésie", "Romance",
-    "Science-Fiction", "Thriller",
+    "Article", "Autres", "Aventure", "Biographie", "Bit-Lit", "Comics",
+    "Drame", "Espionnage", "Essai", "Fantastique", "Fantasy", "Historique",
+    "Horreur", "Humour", "Jeunesse", "Philosophie", "Policier",
+    "Romance", "Science-Fiction", "Thriller",
 ]
 
-_PROMPT_TEMPLATE = """Tu es un classificateur de livres. À partir du titre et de l'auteur, donne le genre littéraire le plus adapté parmi cette liste :
+# Strict lookup: lowercase -> canonical
+_CANONICAL = {g.lower(): g for g in KNOWN_GENRES}
+
+_PROMPT_TEMPLATE = """Tu es un classificateur de livres. À partir du titre et de l'auteur, donne entre 1 et 3 genres littéraires parmi UNIQUEMENT cette liste :
 
 {genres}
 
-Réponds UNIQUEMENT avec le nom du genre, un seul mot ou expression, sans explication.
-Si tu ne connais pas le livre ou que le genre ne correspond à aucun de la liste, réponds "Autres".
+RÈGLES STRICTES :
+- Choisis entre 1 et 3 genres pertinents, séparés par des virgules.
+- Utilise UNIQUEMENT des genres de la liste ci-dessus, copiés exactement.
+- Le genre principal en premier.
+- Pas d'explication, pas de phrase, juste les genres séparés par des virgules.
 
 Titre : {title}
 Auteur : {author}
 
-Genre :"""
+Genres :"""
 
 
 def classify_genre(title, author=""):
-    """Ask the local LLM to classify a book's genre.
+    """Ask the local LLM to classify a book's genres.
 
-    Returns a genre string from KNOWN_GENRES, or "" if the LLM is unavailable.
+    Returns a comma-separated string of 1-3 genres from KNOWN_GENRES,
+    or "" if the LLM is unavailable.
     """
     if not title:
         return ""
@@ -50,22 +56,32 @@ def classify_genre(title, author=""):
                 "model": MODEL,
                 "prompt": prompt,
                 "stream": False,
-                "options": {"temperature": 0.1, "num_predict": 20},
+                "options": {"temperature": 0.0, "num_predict": 30},
             },
             timeout=TIMEOUT,
         )
         resp.raise_for_status()
-        answer = resp.json().get("response", "").strip()
+        answer = resp.json().get("response", "").strip().strip(".")
 
-        # Match against known genres (case-insensitive)
-        for genre in KNOWN_GENRES:
-            if genre.lower() in answer.lower():
-                return genre
+        # Parse comma-separated answer, keep only known genres
+        matched = []
+        for part in answer.split(","):
+            candidate = part.strip().lower()
+            if candidate in _CANONICAL and _CANONICAL[candidate] not in matched:
+                matched.append(_CANONICAL[candidate])
 
-        # If the LLM returned something not in the list
-        if answer and answer.lower() not in ("autres", "unknown", "inconnu"):
-            logger.info(f"LLM suggested unknown genre '{answer}' for '{title}' - using Autres")
-        return "Autres"
+        # Fuzzy fallback: scan for known genre names in the full answer
+        if not matched:
+            low = answer.lower()
+            for genre in KNOWN_GENRES:
+                if genre.lower() in low and genre not in matched:
+                    matched.append(genre)
+
+        if not matched:
+            logger.info(f"LLM returned '{answer}' for '{title}' - no known genres found")
+            return "Autres"
+
+        return ", ".join(matched[:3])
 
     except requests.ConnectionError:
         logger.debug("Ollama not reachable - skipping AI genre classification")

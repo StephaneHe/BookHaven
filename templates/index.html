@@ -233,10 +233,14 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   color: #ccc; word-break: break-all; flex: 1;
 }
 .modal-body .info-value.path { font-family: monospace; font-size: 12px; color: #999; }
+.genre-tag {
+  display: inline-block; background: #2a2a4a; border: 1px solid #444; border-radius: 4px;
+  padding: 1px 7px; font-size: 12px; color: #bcd; margin: 1px 3px 1px 0;
+}
 .ai-genre-btn {
   background: #3a3a5c; color: #aab; border: 1px solid #555; border-radius: 6px;
-  padding: 2px 8px; font-size: 11px; cursor: pointer; margin-left: 8px;
-  transition: background 0.2s;
+  padding: 2px 8px; font-size: 11px; cursor: pointer; margin-left: 4px;
+  transition: background 0.2s; vertical-align: middle;
 }
 .ai-genre-btn:hover { background: #7c8cf5; color: #fff; }
 .ai-genre-btn:disabled { opacity: 0.5; cursor: wait; }
@@ -1309,9 +1313,12 @@ async function showBookInfo(bookId) {
     add('Series', b.series ? b.series + (b.series_index ? ' #' + b.series_index : '') : '');
     add('Category', b.category);
     // Genre row with AI classify button
-    html += '<div class="info-row"><span class="info-label">Genre</span><span class="info-value"><span id="modal-genre-val">' + esc(b.genre || '') + '</span>'
-      + '<button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="Ask AI to detect genre">AI</button>'
-      + '</span></div>';
+    // Genre row with tags + AI button
+    const genreTags = (b.genre || '').split(',').map(g => g.trim()).filter(Boolean)
+      .map(g => '<span class="genre-tag">' + esc(g) + '</span>').join('');
+    html += '<div class="info-row"><span class="info-label">Genre</span><span class="info-value"><span id="modal-genre-val">'
+      + (genreTags || '<span style="color:#666">—</span>')
+      + '</span><button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="Ask AI to detect genre">AI</button></span></div>';
     add('Size', b.file_size ? (b.file_size / 1024 / 1024).toFixed(1) + ' MB' : '');
     html += '</div></div>';
     // Description block
@@ -1344,7 +1351,9 @@ async function classifyGenre(bookId) {
     const r = await fetch('/api/books/' + bookId + '/classify-genre', { method: 'POST' });
     const data = await r.json();
     if (r.ok) {
-      genreEl.textContent = data.genre;
+      const tags = data.genre.split(',').map(g => g.trim()).filter(Boolean)
+        .map(g => '<span class="genre-tag">' + esc(g) + '</span>').join('');
+      genreEl.innerHTML = tags || data.genre;
       btn.textContent = 'OK';
       btn.style.background = '#2a6';
     } else {

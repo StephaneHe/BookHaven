@@ -178,6 +178,39 @@ _KNOWN_GENRES = {
     "humour", "biographie", "essai", "poesie", "info",
 }
 
+# Maps common EPUB dc:subject values and LLM variants to canonical genres
+_GENRE_ALIASES = {
+    "sf": "Science-Fiction", "science fiction": "Science-Fiction",
+    "sci-fi": "Science-Fiction",
+    "bd": "Comics", "bande dessinee": "Comics", "bande dessinée": "Comics",
+    "comic": "Comics", "comics": "Comics", "manga": "Comics",
+    "roman": "Autres", "roman fantastique": "Fantastique",
+    "roman historique": "Historique", "urban fantasy": "Fantasy",
+    "terreur": "Horreur", "suspense": "Thriller", "suspence": "Thriller",
+    "light novel": "Jeunesse", "young adult fiction": "Jeunesse",
+    "litterature": "Autres", "littérature": "Autres",
+    "anticipation": "Science-Fiction", "presse": "Article",
+    "theatre": "Autres", "théâtre": "Autres",
+}
+
+
+def normalize_genre(raw_genre):
+    """Normalize a genre string to a known canonical genre.
+
+    Returns the canonical genre if recognized, or '' if not.
+    """
+    if not raw_genre:
+        return ""
+    low = raw_genre.strip().lower()
+    # Direct match against known genres
+    for g in _KNOWN_GENRES:
+        if g == low:
+            return g.capitalize() if g != "bit-lit" else "Bit-Lit"
+    # Check aliases
+    if low in _GENRE_ALIASES:
+        return _GENRE_ALIASES[low]
+    return ""
+
 
 def _genre_from_path(full_path):
     """Infer genre from a subfolder whose name matches a known genre.
@@ -284,10 +317,17 @@ def _parse_epub(full_path, meta):
             if el is not None and el.text:
                 meta["author"] = el.text.strip()
             
-            # Genre/Subject
+            # Genre/Subject - normalize to known genres only, keep up to 3
             subjects = root.findall(".//dc:subject", ns)
             if subjects:
-                meta["genre"] = ", ".join(s.text.strip() for s in subjects if s.text)
+                matched = []
+                for s in subjects:
+                    if s.text:
+                        g = normalize_genre(s.text.strip())
+                        if g and g not in matched:
+                            matched.append(g)
+                if matched:
+                    meta["genre"] = ", ".join(matched[:3])
             
             # Description
             el = root.find(".//dc:description", ns)
