@@ -1756,6 +1756,9 @@ async function stopScan() {
 function pollScan() {
   const banner = document.getElementById('scan-banner');
   banner.classList.add('active');
+  const stopBtn = document.getElementById('scan-stop-btn');
+  stopBtn.style.display = '';
+  stopBtn.disabled = false;
   const interval = setInterval(async () => {
     try {
       const r = await fetch('/api/scan/status');
@@ -1764,6 +1767,7 @@ function pollScan() {
       document.getElementById('scan-message').textContent = count + (s.message || 'Scanning...');
       const pct = s.total > 0 ? (s.current / s.total * 100) : 0;
       document.getElementById('scan-progress-fill').style.width = pct + '%';
+      document.getElementById('scan-stop-btn').style.display = s.running ? '' : 'none';
       if (!s.running) {
         clearInterval(interval);
         setTimeout(() => {
