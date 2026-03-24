@@ -12,6 +12,8 @@ __pycache__/
 
 # Environment / secrets
 .env
+server.crt
+server.key
 
 # IDE
 .vscode/

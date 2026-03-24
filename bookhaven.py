@@ -1162,5 +1162,13 @@ if __name__ == "__main__":
     media_worker.start_worker()
     logger.info("Media enrichment worker launched")
 
-    logger.info(f"Server starting on http://{config.HOST}:{config.PORT}")
-    app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True)
+    # Use HTTPS if cert files exist
+    cert_file = os.path.join(config.BASE_DIR, "server.crt")
+    key_file = os.path.join(config.BASE_DIR, "server.key")
+    ssl_ctx = None
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        ssl_ctx = (cert_file, key_file)
+        logger.info(f"Server starting on https://{config.HOST}:{config.PORT}")
+    else:
+        logger.info(f"Server starting on http://{config.HOST}:{config.PORT}")
+    app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True, ssl_context=ssl_ctx)
