@@ -12,13 +12,13 @@
 <link rel="apple-touch-icon" href="/static/icon-192.svg">
 <title>BookHaven</title>
 <!-- epub.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/epubjs@0.3.93/dist/epub.min.js"></script>
+<script src="/static/js/jszip.min.js"></script>
+<script src="/static/js/epub.min.js"></script>
 <!-- pdf.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="/static/js/pdf.min.js"></script>
 <script>
   if (typeof pdfjsLib !== 'undefined') {
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    pdfjsLib.GlobalWorkerOptions.workerSrc = '/static/js/pdf.worker.min.js';
   }
 </script>
 <style>
