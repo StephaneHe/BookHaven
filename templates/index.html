@@ -3,6 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#7c5cff">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="/static/manifest.json">
+<link rel="icon" href="/static/icon-192.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/icon-192.svg">
 <title>BookHaven</title>
 <!-- epub.js -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -639,7 +645,9 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .sidebar-close-btn { display: flex; }
 
   /* ── T03: Grid + Cards + Touch Targets ─────────────── */
-  .book-grid { grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+  .book-grid { grid-template-columns: repeat(auto-fill, 100px) !important; gap: 10px !important; justify-content: center !important; }
+  .book-card { max-width: 100px !important; }
+  .book-card img { max-height: 142px !important; }
   .main-content { padding: 12px; }
   .book-card .info-btn {
     opacity: 1 !important; width: 32px; height: 32px; font-size: 16px;
@@ -731,7 +739,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 
 /* Phone-specific overrides */
 @media (max-width: 480px) {
-  .book-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .book-grid { grid-template-columns: repeat(3, 100px); gap: 8px; justify-content: center; }
   .main-content { padding: 10px; }
   .login-box { padding: 16px; }
   .user-grid { grid-template-columns: repeat(3, 1fr); gap: 8px; }
@@ -1390,6 +1398,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // Keyboard navigation in reader
   document.addEventListener('keydown', handleReaderKeys);
   checkAuth();
+  // Register service worker for PWA
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.js').catch(() => {});
   // Resume scan progress bar if a scan is already running
   fetch('/api/scan/status').then(r => r.json()).then(s => {
     if (s.running) pollScan();
