@@ -34,6 +34,7 @@ def init_db():
             has_cover INTEGER DEFAULT 0,
             page_count INTEGER DEFAULT 0,
             description TEXT DEFAULT '',
+            collection_path TEXT DEFAULT '',
             added_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
@@ -58,4 +59,12 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_progress_last_read ON reading_progress(last_read);
     """)
     conn.commit()
+
+    # Migrations: add columns that may not exist in older databases
+    try:
+        conn.execute("ALTER TABLE books ADD COLUMN collection_path TEXT DEFAULT ''")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     conn.close()

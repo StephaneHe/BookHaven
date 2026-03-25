@@ -154,6 +154,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   opacity: 0; transition: opacity 0.2s; cursor: pointer;
 }
 .continue-card:hover .remove-reading { opacity: 1; }
+.continue-card:hover .info-btn { opacity: 1; }
 .remove-reading:hover { background: #c00; color: #fff; }
 .progress-bar {
   position: absolute; bottom: 30px; left: 4px; right: 4px;
@@ -674,6 +675,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .continue-card { width: 110px; min-width: 110px; }
   .continue-card img { width: 110px; height: 157px; }
   .continue-card .mini-title { font-size: 11px; }
+  .continue-card .info-btn { opacity: 1 !important; width: 28px; height: 28px; font-size: 14px; }
   .remove-reading { width: 28px; height: 28px; font-size: 14px; min-width: 28px; min-height: 28px; }
 
   /* ── T06: Breadcrumb ─────────────────────────────────── */
@@ -1297,6 +1299,7 @@ async function loadContinueReading() {
     row.innerHTML = books.map(b => `
       <div class="continue-card">
         <button class="remove-reading" onclick="event.stopPropagation(); removeFromReading(${b.id})" title="Remove">✕</button>
+        <button class="info-btn" onclick="event.stopPropagation(); showBookInfo(${b.id})" title="Info">i</button>
         <div onclick="openBook(${b.id})">
           <img src="/api/books/${b.id}/cover"
                onerror="this.style.opacity='0.3'">

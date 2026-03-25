@@ -104,30 +104,37 @@ def scan_library(progress_callback=None):
             # Remove internal fields
             meta.pop("_cover_data", None)
             
+            # Derive collection_path from series if available
+            collection_path = meta.get("series") or ""
+
             if row:
                 # Update existing
                 conn.execute("""
                     UPDATE books SET title=?, author=?, genre=?, series=?,
                     series_index=?, category=?, format=?, file_size=?,
-                    has_cover=?, page_count=?, description=?, modified_at=CURRENT_TIMESTAMP
+                    has_cover=?, page_count=?, description=?,
+                    collection_path=CASE WHEN (collection_path IS NULL OR collection_path='') THEN ? ELSE collection_path END,
+                    modified_at=CURRENT_TIMESTAMP
                     WHERE id=?
                 """, (meta["title"], meta["author"], meta["genre"],
                       meta["series"], meta["series_index"], meta["category"],
                       meta["format"], meta["file_size"], meta["has_cover"],
                       meta.get("page_count", 0), meta.get("description", ""),
-                      row["id"]))
+                      collection_path, row["id"]))
                 updated_count += 1
             else:
                 # Insert new
                 conn.execute("""
                     INSERT INTO books (path, filename, title, author, genre, series,
-                    series_index, category, format, file_size, has_cover, page_count, description)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    series_index, category, format, file_size, has_cover, page_count, description,
+                    collection_path)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, (meta["path"], meta["filename"], meta["title"],
                       meta["author"], meta["genre"], meta["series"],
                       meta["series_index"], meta["category"], meta["format"],
                       meta["file_size"], meta["has_cover"],
-                      meta.get("page_count", 0), meta.get("description", "")))
+                      meta.get("page_count", 0), meta.get("description", ""),
+                      collection_path))
                 new_count += 1
             
             conn.commit()
@@ -545,15 +552,22 @@ def assign_collections(conn=None):
     # ── Method 1: Bracket pattern [SeriesName-N] ─────────────────
     bracket_re = re.compile(r'\[([^\]]+?)-(\d+)\]')
     
+    # Also fix books that have series from folder-name parsing but no collection_path yet
+    conn.execute("""
+        UPDATE books SET collection_path = series
+        WHERE series != '' AND series IS NOT NULL
+        AND (collection_path IS NULL OR collection_path = '')
+    """)
+
     orphans = conn.execute(
         "SELECT id, filename, title, author FROM books WHERE (series IS NULL OR series='') "
     ).fetchall()
-    
+
     # Build a map of existing series (lowercase -> canonical name)
     existing_series = {}
     for r in conn.execute("SELECT DISTINCT series FROM books WHERE series != ''").fetchall():
         existing_series[r[0].lower()] = r[0]
-    
+
     for r in orphans:
         fn = r["filename"]
         m = bracket_re.search(fn)
