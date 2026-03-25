@@ -154,6 +154,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   opacity: 0; transition: opacity 0.2s; cursor: pointer;
 }
 .continue-card:hover .remove-reading { opacity: 1; }
+.continue-card .info-btn { position: absolute; top: 6px; left: 6px; z-index: 10; }
 .continue-card:hover .info-btn { opacity: 1; }
 .remove-reading:hover { background: #c00; color: #fff; }
 .progress-bar {
@@ -1297,15 +1298,13 @@ async function loadContinueReading() {
     }
     section.style.display = 'block';
     row.innerHTML = books.map(b => `
-      <div class="continue-card">
+      <div class="continue-card" onclick="openBook(${b.id})">
         <button class="remove-reading" onclick="event.stopPropagation(); removeFromReading(${b.id})" title="Remove">✕</button>
         <button class="info-btn" onclick="event.stopPropagation(); showBookInfo(${b.id})" title="Info">i</button>
-        <div onclick="openBook(${b.id})">
-          <img src="/api/books/${b.id}/cover"
-               onerror="this.style.opacity='0.3'">
-          <div class="progress-bar"><div class="fill" style="width:${b.progress}%"></div></div>
-          <div class="title" title="${esc(b.title)}">${esc(b.title)}</div>
-        </div>
+        <img src="/api/books/${b.id}/cover"
+             onerror="this.style.opacity='0.3'">
+        <div class="progress-bar"><div class="fill" style="width:${b.progress}%"></div></div>
+        <div class="title" title="${esc(b.title)}">${esc(b.title)}</div>
       </div>
     `).join('');
   } catch(e) {}
