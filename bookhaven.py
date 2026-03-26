@@ -3,6 +3,8 @@ import os
 import re
 import sys
 import json
+import uuid
+import shutil
 import zipfile
 import hashlib
 import logging
@@ -74,6 +76,9 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
 
 # Scan state (simple in-memory tracking)
 scan_state = {"running": False, "current": 0, "total": 0, "message": "", "cancel": False}
+
+# Pending uploads awaiting confirmation (upload_id -> upload_info)
+_pending_uploads = {}
 
 # No-cover SVG placeholder (served inline, no file needed)
 NO_COVER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
@@ -1134,6 +1139,246 @@ def api_enrichment_start():
         return jsonify({"error": "Enrichment already running"}), 409
     media_worker.start_worker()
     return jsonify({"ok": True, "message": "Enrichment started"})
+
+
+# ── API: Upload ──────────────────────────────────────────────────────────────
+
+def _determine_placement(meta, ext):
+    """Determine the best library folder for an uploaded book.
+
+    Returns (category, dest_folder, reason).
+    """
+    # Base category from format
+    if ext in ('.cbr', '.cbz'):
+        category = 'Comics'
+    elif ext in ('.epub', '.mobi'):
+        category = 'Books'
+    else:  # .pdf
+        category = 'Books'
+
+    # Find the library root for that category
+    lib_path = next(
+        (p for p in config.LIBRARY_PATHS if os.path.basename(p) == category),
+        config.LIBRARY_PATHS[0]
+    )
+
+    series = (meta.get('series') or '').strip()
+
+    if series:
+        # Check if series already exists in DB → reuse its folder
+        conn = database.get_db()
+        row = conn.execute(
+            "SELECT path FROM books WHERE series = ? LIMIT 1", (series,)
+        ).fetchone()
+        conn.close()
+
+        if row:
+            existing_folder = os.path.dirname(row['path'])
+            for lib in config.LIBRARY_PATHS:
+                norm_lib = os.path.normpath(lib)
+                if os.path.normpath(existing_folder).startswith(norm_lib):
+                    cat = os.path.basename(lib)
+                    return cat, existing_folder, f"Existing series '{series}'"
+
+        # New series → create subfolder in category library
+        return category, os.path.join(lib_path, series), f"New series folder '{series}'"
+
+    # No series → category root
+    return category, lib_path, f"{category} library root"
+
+
+@app.route("/api/upload/analyze", methods=["POST"])
+@login_required
+def api_upload_analyze():
+    """Accept an uploaded file, extract metadata and suggest a placement path."""
+    if 'file' not in request.files:
+        return jsonify({"error": "No file provided"}), 400
+
+    f = request.files['file']
+    if not f.filename:
+        return jsonify({"error": "No filename"}), 400
+
+    filename = f.filename
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in config.SUPPORTED_FORMATS:
+        return jsonify({"error": f"Unsupported format '{ext}'. Allowed: {', '.join(sorted(config.SUPPORTED_FORMATS))}"}), 400
+
+    # Save to a temp upload folder
+    temp_dir = os.path.join(os.path.dirname(__file__), 'data', 'uploads')
+    os.makedirs(temp_dir, exist_ok=True)
+    temp_id = str(uuid.uuid4())
+    temp_path = os.path.join(temp_dir, temp_id + ext)
+    f.save(temp_path)
+
+    try:
+        # Extract metadata using scanner
+        root = temp_dir  # use temp dir as root so series-from-folder won't fire
+        meta = scanner._extract_metadata(temp_path, filename, ext, 'Books', root)
+
+        # Determine placement
+        category, dest_folder, reason = _determine_placement(meta, ext)
+        meta['category'] = category
+
+        _pending_uploads[temp_id] = {
+            'temp_path': temp_path,
+            'filename': filename,
+            'ext': ext,
+            'meta': meta,
+            'dest_folder': dest_folder,
+        }
+
+        return jsonify({
+            'upload_id': temp_id,
+            'filename': filename,
+            'title': meta.get('title', ''),
+            'author': meta.get('author', ''),
+            'series': meta.get('series', ''),
+            'series_index': meta.get('series_index', 0),
+            'category': category,
+            'format': ext.lstrip('.'),
+            'genre': meta.get('genre', ''),
+            'dest_folder': dest_folder,
+            'placement_reason': reason,
+        })
+    except Exception as e:
+        try:
+            os.unlink(temp_path)
+        except Exception:
+            pass
+        logger.error(f"Upload analyze error: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/upload/confirm", methods=["POST"])
+@login_required
+def api_upload_confirm():
+    """Move the pending upload to the library and add it to the database."""
+    data = request.get_json()
+    upload_id = data.get('upload_id')
+
+    if not upload_id or upload_id not in _pending_uploads:
+        return jsonify({"error": "Invalid or expired upload ID"}), 400
+
+    pending = _pending_uploads.pop(upload_id)
+    temp_path = pending['temp_path']
+
+    # Allow user to override any metadata field
+    meta = pending['meta'].copy()
+    for field in ('title', 'author', 'series', 'series_index', 'category', 'genre'):
+        if field in data and data[field] != '':
+            meta[field] = data[field]
+
+    dest_folder = data.get('dest_folder') or pending['dest_folder']
+    filename = pending['filename']
+    ext = pending['ext']
+
+    try:
+        os.makedirs(dest_folder, exist_ok=True)
+        dest_path = os.path.join(dest_folder, filename)
+
+        # Avoid overwriting an existing file
+        if os.path.exists(dest_path):
+            base = os.path.splitext(filename)[0]
+            dest_path = os.path.join(dest_folder, f"{base}_upload{ext}")
+
+        shutil.move(temp_path, dest_path)
+
+        # Re-extract cover now that the file is at its final path
+        cover_data = meta.pop('_cover_data', None)
+        cover_ok = scanner._extract_cover(dest_path, ext, cover_data)
+
+        collection_path = (meta.get('series') or '').strip()
+
+        conn = database.get_db()
+        conn.execute("""
+            INSERT OR REPLACE INTO books
+              (path, filename, title, author, genre, series, series_index,
+               category, format, file_size, has_cover, page_count, description,
+               collection_path)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (
+            dest_path, os.path.basename(dest_path),
+            meta.get('title', ''), meta.get('author', ''),
+            meta.get('genre', ''), meta.get('series', ''),
+            meta.get('series_index', 0), meta.get('category', ''),
+            ext.lstrip('.'), os.path.getsize(dest_path),
+            1 if cover_ok else 0,
+            meta.get('page_count', 0), meta.get('description', ''),
+            collection_path,
+        ))
+        conn.commit()
+        book = conn.execute("SELECT id FROM books WHERE path = ?", (dest_path,)).fetchone()
+        book_id = book['id'] if book else None
+        conn.close()
+
+        logger.info(f"Upload complete: '{meta.get('title')}' → {dest_path}")
+        return jsonify({
+            "ok": True,
+            "book_id": book_id,
+            "dest_path": dest_path,
+            "title": meta.get('title', ''),
+            "category": meta.get('category', ''),
+        })
+    except Exception as e:
+        if os.path.exists(temp_path):
+            try:
+                os.unlink(temp_path)
+            except Exception:
+                pass
+        logger.error(f"Upload confirm error: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/upload/suggest-path")
+@login_required
+def api_upload_suggest_path():
+    """Return a suggested destination folder given series + category."""
+    series = request.args.get('series', '').strip()
+    category = request.args.get('category', 'Books').strip()
+
+    lib_path = next(
+        (p for p in config.LIBRARY_PATHS if os.path.basename(p) == category),
+        config.LIBRARY_PATHS[0]
+    )
+
+    if series:
+        conn = database.get_db()
+        row = conn.execute(
+            "SELECT path FROM books WHERE series = ? LIMIT 1", (series,)
+        ).fetchone()
+        conn.close()
+        if row:
+            existing_folder = os.path.dirname(row['path'])
+            for lib in config.LIBRARY_PATHS:
+                if os.path.normpath(existing_folder).startswith(os.path.normpath(lib)):
+                    return jsonify({
+                        "dest_folder": existing_folder,
+                        "reason": f"Existing series '{series}'"
+                    })
+        return jsonify({
+            "dest_folder": os.path.join(lib_path, series),
+            "reason": f"New series folder '{series}'"
+        })
+
+    return jsonify({
+        "dest_folder": lib_path,
+        "reason": f"{category} library root"
+    })
+
+
+@app.route("/api/upload/cancel", methods=["POST"])
+@login_required
+def api_upload_cancel():
+    """Cancel a pending upload and delete the temp file."""
+    data = request.get_json()
+    upload_id = data.get('upload_id')
+    if upload_id and upload_id in _pending_uploads:
+        pending = _pending_uploads.pop(upload_id)
+        try:
+            os.unlink(pending['temp_path'])
+        except Exception:
+            pass
+    return jsonify({"ok": True})
 
 
 # ── Frontend Routes ──────────────────────────────────────────────────────────

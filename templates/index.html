@@ -206,6 +206,95 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 .book-card:hover .info-btn { opacity: 1; }
 .info-btn:hover { background: #7c8cf5; color: #fff; }
 
+/* ── Upload Modal ──────────────────────────────────────── */
+.upload-modal-bg {
+  display: none; position: fixed; inset: 0;
+  background: #000b; z-index: 2000;
+  align-items: center; justify-content: center;
+}
+.upload-modal-bg.open { display: flex; }
+.upload-modal {
+  background: #12122a; border-radius: 14px; width: 540px;
+  max-width: 95vw; max-height: 90vh; overflow-y: auto;
+  padding: 28px 32px; position: relative; box-shadow: 0 8px 40px #0008;
+}
+.upload-modal h2 { margin: 0 0 20px; font-size: 20px; }
+.upload-close {
+  position: absolute; top: 14px; right: 16px;
+  background: none; border: none; color: #888;
+  font-size: 20px; cursor: pointer; line-height: 1;
+}
+.upload-close:hover { color: #fff; }
+.upload-dropzone {
+  border: 2px dashed #3a3a5c; border-radius: 10px;
+  padding: 40px 20px; text-align: center; cursor: pointer;
+  color: #888; transition: border-color 0.2s, background 0.2s;
+}
+.upload-dropzone.drag-over {
+  border-color: #7c8cf5; background: #7c8cf510; color: #aaa;
+}
+.upload-dropzone .drop-icon { font-size: 36px; margin-bottom: 10px; }
+.upload-dropzone p { margin: 6px 0; font-size: 14px; }
+.upload-dropzone .drop-hint { font-size: 12px; color: #555; margin-top: 8px; }
+.upload-browse-btn {
+  margin-top: 14px; padding: 8px 20px;
+  background: #7c8cf5; color: #fff; border: none;
+  border-radius: 6px; cursor: pointer; font-size: 13px;
+}
+.upload-browse-btn:hover { background: #6a7ae0; }
+.upload-analyzing {
+  text-align: center; padding: 32px; color: #aaa; font-size: 15px;
+}
+.upload-result { display: none; }
+.upload-result.show { display: block; }
+.upload-field { margin-bottom: 14px; }
+.upload-field label {
+  display: block; font-size: 12px; color: #888;
+  margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.upload-field input, .upload-field select {
+  width: 100%; background: #1a1a35; border: 1px solid #2a2a50;
+  color: #e0e0ff; border-radius: 6px; padding: 8px 10px;
+  font-size: 14px; box-sizing: border-box;
+}
+.upload-field input:focus, .upload-field select:focus {
+  border-color: #7c8cf5; outline: none;
+}
+.upload-placement-box {
+  background: #1a1a35; border: 1px solid #2a2a50;
+  border-radius: 8px; padding: 12px 14px; margin-bottom: 18px;
+}
+.upload-placement-box .label {
+  font-size: 11px; color: #666; text-transform: uppercase;
+  letter-spacing: 0.5px; margin-bottom: 6px;
+}
+.upload-placement-box .path {
+  font-size: 13px; color: #7c8cf5; word-break: break-all;
+  font-family: monospace;
+}
+.upload-placement-box .reason {
+  font-size: 12px; color: #666; margin-top: 4px;
+}
+.upload-actions { display: flex; gap: 10px; margin-top: 4px; }
+.upload-actions button { flex: 1; padding: 10px; font-size: 14px; border-radius: 8px; border: none; cursor: pointer; }
+.upload-confirm-btn { background: #7c8cf5; color: #fff; }
+.upload-confirm-btn:hover { background: #6a7ae0; }
+.upload-confirm-btn:disabled { background: #444; color: #666; cursor: not-allowed; }
+.upload-cancel-btn { background: #2a2a44; color: #aaa; }
+.upload-cancel-btn:hover { background: #333355; color: #fff; }
+.upload-done {
+  text-align: center; padding: 24px 0 8px;
+}
+.upload-done .done-icon { font-size: 48px; }
+.upload-done h3 { margin: 12px 0 6px; font-size: 18px; }
+.upload-done p { color: #888; font-size: 14px; }
+.upload-error {
+  background: #3a1515; border: 1px solid #7a2020;
+  border-radius: 8px; padding: 12px; color: #ff8888;
+  font-size: 13px; margin-bottom: 14px; display: none;
+}
+.upload-error.show { display: block; }
+
 /* Book Info Modal */
 .modal-overlay {
   display: none; position: fixed; inset: 0; z-index: 1000;
@@ -629,6 +718,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .logo-text { display: none; }
   .logo { font-size: 18px; }
   .scan-btn { display: none !important; }
+  .upload-btn { display: none !important; }
   .user-info { display: none !important; }
   #logout-btn {
     font-size: 0; padding: 8px; min-width: 44px; min-height: 44px;
@@ -780,6 +870,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     </div>
     <div class="topbar-right">
       <button class="secondary scan-btn" onclick="triggerScan()">🔄 Scan</button>
+      <button class="secondary upload-btn" onclick="openUpload()" title="Upload a book">📤 Upload</button>
       <span class="user-info" id="user-display"></span>
       <button id="logout-btn" class="secondary" onclick="doLogout()" title="Logout">Logout</button>
     </div>
@@ -836,6 +927,94 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
         </div>
         <div class="book-grid" id="book-grid"></div>
       <div class="pagination" id="pagination"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ UPLOAD MODAL ══════════════════════════════════════════ -->
+<div id="upload-modal-bg" class="upload-modal-bg" onclick="if(event.target===this)closeUpload()">
+  <div class="upload-modal">
+    <button class="upload-close" onclick="closeUpload()">✕</button>
+    <h2>📤 Upload Book</h2>
+
+    <!-- Step 1: Pick file -->
+    <div id="upload-step-pick">
+      <div id="upload-dropzone" class="upload-dropzone"
+           ondragover="uploadDragOver(event)" ondragleave="uploadDragLeave(event)"
+           ondrop="uploadDrop(event)" onclick="document.getElementById('upload-file-input').click()">
+        <div class="drop-icon">📚</div>
+        <p>Drag &amp; drop a book file here</p>
+        <p>or</p>
+        <button class="upload-browse-btn" onclick="event.stopPropagation(); document.getElementById('upload-file-input').click()">Browse Files</button>
+        <p class="drop-hint">Supported: EPUB, PDF, CBR, CBZ, MOBI</p>
+      </div>
+      <input type="file" id="upload-file-input" accept=".epub,.pdf,.cbr,.cbz,.mobi"
+             style="display:none" onchange="uploadFileSelected(this.files[0])">
+    </div>
+
+    <!-- Step 2: Analyzing -->
+    <div id="upload-step-analyzing" style="display:none">
+      <div class="upload-analyzing">⏳ Analyzing file…</div>
+    </div>
+
+    <!-- Step 3: Confirm -->
+    <div id="upload-step-confirm" style="display:none">
+      <div id="upload-error" class="upload-error"></div>
+      <div class="upload-field">
+        <label>Title</label>
+        <input id="up-title" type="text">
+      </div>
+      <div class="upload-field">
+        <label>Author</label>
+        <input id="up-author" type="text">
+      </div>
+      <div style="display:flex;gap:10px">
+        <div class="upload-field" style="flex:2">
+          <label>Series</label>
+          <input id="up-series" type="text" placeholder="(leave blank if standalone)">
+        </div>
+        <div class="upload-field" style="flex:1">
+          <label>Volume #</label>
+          <input id="up-series-index" type="number" min="0" step="0.5">
+        </div>
+      </div>
+      <div class="upload-field">
+        <label>Category</label>
+        <select id="up-category">
+          <option>Books</option>
+          <option>Comics</option>
+          <option>Education</option>
+          <option>Magazines</option>
+        </select>
+      </div>
+
+      <div class="upload-placement-box">
+        <div class="label">📁 Destination folder</div>
+        <div class="path" id="up-dest-display"></div>
+        <div class="reason" id="up-reason"></div>
+        <div style="margin-top:8px">
+          <input id="up-dest" type="text" style="width:100%;background:#12122a;border:1px solid #2a2a50;color:#aaa;border-radius:4px;padding:5px 8px;font-size:12px;box-sizing:border-box;font-family:monospace"
+                 oninput="document.getElementById('up-dest-display').textContent=this.value">
+        </div>
+      </div>
+
+      <div class="upload-actions">
+        <button class="upload-confirm-btn" id="up-confirm-btn" onclick="confirmUpload()">✓ Upload Here</button>
+        <button class="upload-cancel-btn" onclick="closeUpload()">Cancel</button>
+      </div>
+    </div>
+
+    <!-- Step 4: Done -->
+    <div id="upload-step-done" style="display:none">
+      <div class="upload-done">
+        <div class="done-icon">✅</div>
+        <h3 id="up-done-title"></h3>
+        <p id="up-done-path"></p>
+        <div class="upload-actions" style="margin-top:20px">
+          <button class="upload-confirm-btn" onclick="closeUpload();loadContinueReading();loadCategoryRows();loadBooks()">Back to Library</button>
+          <button class="upload-cancel-btn" onclick="uploadReset()">Upload Another</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -1870,6 +2049,183 @@ function esc(s) {
   var comicEl = document.getElementById('comic-container');
   if (comicEl) comicEl.dataset.swipeEnabled = 'true';
 })();
+
+/* ═══════════════════════════════════════════════════════
+   Upload Feature
+   ═══════════════════════════════════════════════════════ */
+
+let _uploadId = null;
+
+function openUpload() {
+  uploadReset();
+  document.getElementById('upload-modal-bg').classList.add('open');
+}
+
+function closeUpload() {
+  if (_uploadId) {
+    fetch('/api/upload/cancel', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({upload_id: _uploadId})
+    }).catch(() => {});
+    _uploadId = null;
+  }
+  document.getElementById('upload-modal-bg').classList.remove('open');
+}
+
+function uploadReset() {
+  _uploadId = null;
+  document.getElementById('upload-file-input').value = '';
+  document.getElementById('upload-step-pick').style.display = '';
+  document.getElementById('upload-step-analyzing').style.display = 'none';
+  document.getElementById('upload-step-confirm').style.display = 'none';
+  document.getElementById('upload-step-done').style.display = 'none';
+  document.getElementById('upload-error').className = 'upload-error';
+  document.getElementById('upload-dropzone').className = 'upload-dropzone';
+}
+
+function uploadDragOver(e) {
+  e.preventDefault();
+  document.getElementById('upload-dropzone').classList.add('drag-over');
+}
+
+function uploadDragLeave(e) {
+  document.getElementById('upload-dropzone').classList.remove('drag-over');
+}
+
+function uploadDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-dropzone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) uploadFileSelected(file);
+}
+
+function uploadFileSelected(file) {
+  if (!file) return;
+  const allowed = ['.epub', '.pdf', '.cbr', '.cbz', '.mobi'];
+  const ext = file.name.slice(file.name.lastIndexOf('.')).toLowerCase();
+  if (!allowed.includes(ext)) {
+    alert('Unsupported file type. Please upload an EPUB, PDF, CBR, CBZ, or MOBI file.');
+    return;
+  }
+
+  // Show analyzing step
+  document.getElementById('upload-step-pick').style.display = 'none';
+  document.getElementById('upload-step-analyzing').style.display = '';
+
+  const form = new FormData();
+  form.append('file', file);
+
+  fetch('/api/upload/analyze', {method: 'POST', body: form})
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) {
+        uploadShowError(data.error);
+        return;
+      }
+      _uploadId = data.upload_id;
+
+      // Populate fields
+      document.getElementById('up-title').value = data.title || '';
+      document.getElementById('up-author').value = data.author || '';
+      document.getElementById('up-series').value = data.series || '';
+      document.getElementById('up-series-index').value = data.series_index || '';
+      const catSel = document.getElementById('up-category');
+      for (let i = 0; i < catSel.options.length; i++) {
+        if (catSel.options[i].value === data.category) { catSel.selectedIndex = i; break; }
+      }
+      document.getElementById('up-dest').value = data.dest_folder || '';
+      document.getElementById('up-dest-display').textContent = data.dest_folder || '';
+      document.getElementById('up-reason').textContent = data.placement_reason || '';
+
+      // Show confirm step
+      document.getElementById('upload-step-analyzing').style.display = 'none';
+      document.getElementById('upload-step-confirm').style.display = '';
+    })
+    .catch(err => uploadShowError('Network error: ' + err));
+}
+
+function uploadShowError(msg) {
+  document.getElementById('upload-step-analyzing').style.display = 'none';
+  document.getElementById('upload-step-pick').style.display = '';
+  const el = document.getElementById('upload-error');
+  el.textContent = '⚠ ' + msg;
+  el.className = 'upload-error show';
+  document.getElementById('upload-step-confirm').style.display = 'none';
+}
+
+function confirmUpload() {
+  if (!_uploadId) return;
+  const btn = document.getElementById('up-confirm-btn');
+  btn.disabled = true;
+  btn.textContent = 'Uploading…';
+
+  const series = document.getElementById('up-series').value.trim();
+  const destFolder = document.getElementById('up-dest').value.trim();
+
+  // Re-calculate destination if series was changed manually
+  const payload = {
+    upload_id: _uploadId,
+    title: document.getElementById('up-title').value.trim(),
+    author: document.getElementById('up-author').value.trim(),
+    series: series,
+    series_index: parseFloat(document.getElementById('up-series-index').value) || 0,
+    category: document.getElementById('up-category').value,
+    dest_folder: destFolder,
+  };
+
+  fetch('/api/upload/confirm', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  })
+    .then(r => r.json())
+    .then(data => {
+      btn.disabled = false;
+      btn.textContent = '✓ Upload Here';
+      if (data.error) {
+        const el = document.getElementById('upload-error');
+        el.textContent = '⚠ ' + data.error;
+        el.className = 'upload-error show';
+        return;
+      }
+      _uploadId = null;
+      document.getElementById('up-done-title').textContent = data.title || 'Book uploaded';
+      document.getElementById('up-done-path').textContent = '📁 ' + data.dest_path;
+      document.getElementById('upload-step-confirm').style.display = 'none';
+      document.getElementById('upload-step-done').style.display = '';
+    })
+    .catch(err => {
+      btn.disabled = false;
+      btn.textContent = '✓ Upload Here';
+      const el = document.getElementById('upload-error');
+      el.textContent = '⚠ Network error: ' + err;
+      el.className = 'upload-error show';
+    });
+}
+
+// Recalculate suggested path when series field changes
+document.addEventListener('DOMContentLoaded', () => {
+  const seriesInput = document.getElementById('up-series');
+  if (seriesInput) {
+    seriesInput.addEventListener('change', function() {
+      if (!_uploadId) return;
+      const series = this.value.trim();
+      const category = document.getElementById('up-category').value;
+      // Ask server for updated placement based on new series value
+      fetch('/api/upload/suggest-path?' + new URLSearchParams({series, category}))
+        .then(r => r.json())
+        .then(d => {
+          if (d.dest_folder) {
+            document.getElementById('up-dest').value = d.dest_folder;
+            document.getElementById('up-dest-display').textContent = d.dest_folder;
+            document.getElementById('up-reason').textContent = d.reason || '';
+          }
+        })
+        .catch(() => {});
+    });
+  }
+});
 
 </script>
 
