@@ -297,7 +297,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 
 /* ── Sidebar Upload Button ─────────────────────────────── */
 .sidebar-upload-btn {
-  width: 100%; margin-bottom: 16px; padding: 10px 14px;
+  width: 100%; margin-top: 24px; padding: 10px 14px;
   background: #7c8cf5; color: #fff; border-radius: 8px;
   font-size: 14px; font-weight: 500; text-align: left;
   border: none; cursor: pointer;
@@ -546,6 +546,13 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 }
 #pdf-container canvas {
   max-width: 100%; box-shadow: 0 2px 8px #0005;
+}
+.pdf-floating-back {
+  position: fixed; bottom: 20px; left: 20px; z-index: 300;
+  width: 44px; height: 44px; border-radius: 50%;
+  background: rgba(30,30,50,0.85); border: 1px solid #555;
+  color: #fff; font-size: 20px; cursor: pointer;
+  box-shadow: 0 2px 10px #000a;
 }
 
 /* Comic Reader */
@@ -904,7 +911,6 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
     <div class="sidebar">
       <button id="sidebar-close-btn" class="sidebar-close-btn" onclick="closeSidebar()">✕</button>
-      <button class="sidebar-upload-btn" onclick="closeSidebar(); openUpload()">📤 Upload Book</button>
       <h3>Category</h3>
       <select id="filter-category" onchange="setFilter('category', this.value)">
         <option value="">All</option>
@@ -927,6 +933,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
           <button class="clear-author" onclick="clearAuthor()">✕</button>
         </div>
       </div>
+      <button class="sidebar-upload-btn" onclick="closeSidebar(); openUpload()">📤 Upload Book</button>
     </div>
     <div class="main-content">
       <div id="continue-section" class="continue-section" style="display:none">
@@ -1053,6 +1060,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   </div>
   <!-- PDF -->
   <div id="pdf-container" style="display:none"></div>
+  <button id="pdf-back-btn" class="pdf-floating-back" onclick="closeReader()" style="display:none">←</button>
   <!-- Comic -->
   <div id="comic-container" style="display:none">
     <button class="comic-nav prev" onclick="comicPrev()"></button>
@@ -1634,6 +1642,7 @@ async function openBook(id) {
     // Hide all reader containers
     document.getElementById('epub-container').style.display = 'none';
     document.getElementById('pdf-container').style.display = 'none';
+    document.getElementById('pdf-back-btn').style.display = 'none';
     document.getElementById('comic-container').style.display = 'none';
 
     if (fmt === 'epub') {
@@ -1763,6 +1772,7 @@ function epubNext() { if (state.epubRendition) state.epubRendition.next(); }
 async function openPdf(bookId) {
   const container = document.getElementById('pdf-container');
   container.style.display = 'flex';
+  document.getElementById('pdf-back-btn').style.display = 'block';
   container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading PDF...</div>';
 
   try {
