@@ -240,6 +240,8 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   color: #ccc; word-break: break-all; flex: 1;
 }
 .modal-body .info-value.path { font-family: monospace; font-size: 12px; color: #999; }
+.modal-body .info-value .series-nav-link { text-decoration: underline; cursor: pointer; }
+.modal-body .info-value .series-nav-link:hover { color: #aab4ff; }
 .genre-tag {
   display: inline-block; background: #2a2a4a; border: 1px solid #444; border-radius: 4px;
   padding: 1px 7px; font-size: 12px; color: #bcd; margin: 1px 3px 1px 0;
@@ -1320,7 +1322,12 @@ async function showBookInfo(bookId) {
     add('Author', b.author);
     add('Format', b.format ? b.format.toUpperCase() : '');
     add('Pages', b.page_count);
-    add('Series', b.series ? b.series + (b.series_index ? ' #' + b.series_index : '') : '');
+    if (b.series) {
+      const seriesDisplay = esc(b.series) + (b.series_index ? ' #' + b.series_index : '');
+      html += '<div class="info-row"><span class="info-label">Series</span><span class="info-value">'
+        + '<a class="series-nav-link" href="#" data-series="' + esc(b.series) + '">' + seriesDisplay + '</a>'
+        + '</span></div>';
+    }
     add('Category', b.category);
     // Genre row with AI classify button
     // Genre row with tags + AI button
@@ -1342,6 +1349,19 @@ async function showBookInfo(bookId) {
     addPath('Filename', b.filename);
     add('Added', b.added_at);
     document.getElementById('modal-body').innerHTML = html;
+    const seriesLink = document.querySelector('#book-info-modal .series-nav-link');
+    if (seriesLink) {
+      seriesLink.addEventListener('click', e => {
+        e.preventDefault();
+        const series = seriesLink.dataset.series;
+        closeBookInfo();
+        state.activeFilters = { category: '', format: '', genre: '', author: '', search: '' };
+        state.collectionPrefix = series;
+        state.currentPage = 1;
+        showView('library-view');
+        loadBooks();
+      });
+    }
     document.getElementById('book-info-modal').classList.add('active');
   } catch(e) {
     console.error('Error loading book info:', e);
