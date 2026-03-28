@@ -295,6 +295,15 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 }
 .upload-error.show { display: block; }
 
+/* ── Sidebar Upload Button ─────────────────────────────── */
+.sidebar-upload-btn {
+  width: 100%; margin-bottom: 16px; padding: 10px 14px;
+  background: #7c8cf5; color: #fff; border-radius: 8px;
+  font-size: 14px; font-weight: 500; text-align: left;
+  border: none; cursor: pointer;
+}
+.sidebar-upload-btn:hover { background: #6a7ae0; }
+
 /* Book Info Modal */
 .modal-overlay {
   display: none; position: fixed; inset: 0; z-index: 1000;
@@ -718,6 +727,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .logo-text { display: none; }
   .logo { font-size: 18px; }
   .scan-btn { display: none !important; }
+  .upload-btn { display: none !important; }
   .user-info { display: none !important; }
   #logout-btn {
     font-size: 0; padding: 8px; min-width: 44px; min-height: 44px;
@@ -800,6 +810,15 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .scan-banner { font-size: 12px; padding: 6px 12px; }
   .enrichment-bar { height: 32px; padding: 4px 12px; font-size: 11px; }
   .enrichment-bar .enr-progress { max-width: 80px; }
+
+  /* ── Upload Modal (mobile) ───────────────────────────── */
+  .upload-modal {
+    width: 100vw; max-width: 100vw; max-height: 100vh;
+    border-radius: 0; padding: 20px 16px; min-height: 100vh;
+    display: flex; flex-direction: column;
+  }
+  .upload-dropzone { padding: 24px 16px; }
+  .upload-series-row { flex-direction: column !important; gap: 0 !important; }
 
   /* ── T13: Reader topbar toggle ───────────────────────── */
   .reader-topbar-hidden {
@@ -885,6 +904,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     <div id="sidebar-overlay" class="sidebar-overlay" onclick="closeSidebar()"></div>
     <div class="sidebar">
       <button id="sidebar-close-btn" class="sidebar-close-btn" onclick="closeSidebar()">✕</button>
+      <button class="sidebar-upload-btn" onclick="closeSidebar(); openUpload()">📤 Upload Book</button>
       <h3>Category</h3>
       <select id="filter-category" onchange="setFilter('category', this.value)">
         <option value="">All</option>
@@ -967,7 +987,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
         <label>Author</label>
         <input id="up-author" type="text">
       </div>
-      <div style="display:flex;gap:10px">
+      <div class="upload-series-row" style="display:flex;gap:10px">
         <div class="upload-field" style="flex:2">
           <label>Series</label>
           <input id="up-series" type="text" placeholder="(leave blank if standalone)">
