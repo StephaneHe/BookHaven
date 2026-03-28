@@ -1004,23 +1004,33 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
           <input id="up-series-index" type="number" min="0" step="0.5">
         </div>
       </div>
-      <div class="upload-field">
-        <label>Category</label>
-        <select id="up-category">
-          <option>Books</option>
-          <option>Comics</option>
-          <option>Education</option>
-          <option>Magazines</option>
-        </select>
+      <div style="display:flex;gap:10px">
+        <div class="upload-field" style="flex:2">
+          <label>Genre</label>
+          <input id="up-genre" type="text" placeholder="e.g. Informatique, Marketing…"
+                 onchange="uploadSuggestPath()">
+        </div>
+        <div class="upload-field" style="flex:1">
+          <label>Category</label>
+          <select id="up-category" onchange="uploadSuggestPath()">
+            <option>Books</option>
+            <option>Comics</option>
+            <option>Education</option>
+            <option>Magazines</option>
+          </select>
+        </div>
       </div>
 
       <div class="upload-placement-box">
         <div class="label">📁 Destination folder</div>
         <div class="path" id="up-dest-display"></div>
         <div class="reason" id="up-reason"></div>
+        <div id="up-new-folder-badge" style="display:none;margin-top:6px;background:#2a1f0a;border:1px solid #7a5500;border-radius:5px;padding:5px 10px;font-size:12px;color:#ffaa44">
+          ⚠ This folder doesn't exist yet — it will be created on upload.
+        </div>
         <div style="margin-top:8px">
           <input id="up-dest" type="text" style="width:100%;background:#12122a;border:1px solid #2a2a50;color:#aaa;border-radius:4px;padding:5px 8px;font-size:12px;box-sizing:border-box;font-family:monospace"
-                 oninput="document.getElementById('up-dest-display').textContent=this.value">
+                 oninput="document.getElementById('up-dest-display').textContent=this.value;document.getElementById('up-new-folder-badge').style.display='none'">
         </div>
       </div>
 
@@ -2159,13 +2169,12 @@ function uploadFileSelected(file) {
       document.getElementById('up-author').value = data.author || '';
       document.getElementById('up-series').value = data.series || '';
       document.getElementById('up-series-index').value = data.series_index || '';
+      document.getElementById('up-genre').value = data.genre || '';
       const catSel = document.getElementById('up-category');
       for (let i = 0; i < catSel.options.length; i++) {
         if (catSel.options[i].value === data.category) { catSel.selectedIndex = i; break; }
       }
-      document.getElementById('up-dest').value = data.dest_folder || '';
-      document.getElementById('up-dest-display').textContent = data.dest_folder || '';
-      document.getElementById('up-reason').textContent = data.placement_reason || '';
+      uploadApplyPlacement(data.dest_folder, data.placement_reason, data.is_new_folder);
 
       // Show confirm step
       document.getElementById('upload-step-analyzing').style.display = 'none';
@@ -2192,13 +2201,13 @@ function confirmUpload() {
   const series = document.getElementById('up-series').value.trim();
   const destFolder = document.getElementById('up-dest').value.trim();
 
-  // Re-calculate destination if series was changed manually
   const payload = {
     upload_id: _uploadId,
     title: document.getElementById('up-title').value.trim(),
     author: document.getElementById('up-author').value.trim(),
     series: series,
     series_index: parseFloat(document.getElementById('up-series-index').value) || 0,
+    genre: document.getElementById('up-genre').value.trim(),
     category: document.getElementById('up-category').value,
     dest_folder: destFolder,
   };
@@ -2233,27 +2242,31 @@ function confirmUpload() {
     });
 }
 
-// Recalculate suggested path when series field changes
+function uploadApplyPlacement(dest_folder, reason, is_new_folder) {
+  document.getElementById('up-dest').value = dest_folder || '';
+  document.getElementById('up-dest-display').textContent = dest_folder || '';
+  document.getElementById('up-reason').textContent = reason || '';
+  const badge = document.getElementById('up-new-folder-badge');
+  badge.style.display = is_new_folder ? '' : 'none';
+  const btn = document.getElementById('up-confirm-btn');
+  btn.textContent = is_new_folder ? '✓ Create Folder & Upload' : '✓ Upload Here';
+}
+
+function uploadSuggestPath() {
+  if (!_uploadId) return;
+  const series = document.getElementById('up-series').value.trim();
+  const genre = document.getElementById('up-genre').value.trim();
+  const category = document.getElementById('up-category').value;
+  fetch('/api/upload/suggest-path?' + new URLSearchParams({series, genre, category}))
+    .then(r => r.json())
+    .then(d => { if (d.dest_folder) uploadApplyPlacement(d.dest_folder, d.reason, d.is_new_folder); })
+    .catch(() => {});
+}
+
+// Wire up series change listener
 document.addEventListener('DOMContentLoaded', () => {
   const seriesInput = document.getElementById('up-series');
-  if (seriesInput) {
-    seriesInput.addEventListener('change', function() {
-      if (!_uploadId) return;
-      const series = this.value.trim();
-      const category = document.getElementById('up-category').value;
-      // Ask server for updated placement based on new series value
-      fetch('/api/upload/suggest-path?' + new URLSearchParams({series, category}))
-        .then(r => r.json())
-        .then(d => {
-          if (d.dest_folder) {
-            document.getElementById('up-dest').value = d.dest_folder;
-            document.getElementById('up-dest-display').textContent = d.dest_folder;
-            document.getElementById('up-reason').textContent = d.reason || '';
-          }
-        })
-        .catch(() => {});
-    });
-  }
+  if (seriesInput) seriesInput.addEventListener('change', uploadSuggestPath);
 });
 
 </script>

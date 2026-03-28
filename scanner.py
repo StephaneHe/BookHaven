@@ -117,8 +117,8 @@ def scan_library(progress_callback=None):
                     modified_at=CURRENT_TIMESTAMP
                     WHERE id=?
                 """, (meta["title"], meta["author"], meta["genre"],
-                      meta["series"], meta["series_index"], meta["category"],
-                      meta["format"], meta["file_size"], meta["has_cover"],
+                      meta["series"], meta["series_index"],
+                      meta["category"], meta["format"], meta["file_size"], meta["has_cover"],
                       meta.get("page_count", 0), meta.get("description", ""),
                       collection_path, row["id"]))
                 updated_count += 1
@@ -157,15 +157,14 @@ def scan_library(progress_callback=None):
     if progress_callback:
         progress_callback(total, total, msg)
     
-    # Post-scan: auto-assign collections to books without series
-    if new_count > 0 or updated_count > 0:
-        try:
-            assigned = assign_collections()
-            if assigned > 0:
-                msg += f", {assigned} auto-classified"
-                logger.info(f"Auto-classified {assigned} books into collections")
-        except Exception as e:
-            logger.error(f"Collection assignment error: {e}")
+    # Post-scan: auto-assign collections to books without series (always run)
+    try:
+        assigned = assign_collections()
+        if assigned > 0:
+            msg += f", {assigned} auto-classified"
+            logger.info(f"Auto-classified {assigned} books into collections")
+    except Exception as e:
+        logger.error(f"Collection assignment error: {e}")
     
     return {"new": new_count, "updated": updated_count, "removed": len(removed_paths), "total": total}
 
@@ -244,6 +243,7 @@ def _extract_metadata(full_path, fname, ext, category, root):
         "genre": "",
         "series": "",
         "series_index": 0,
+        "collection_path": "",
         "category": category,
         "description": "",
         "page_count": 0,
@@ -461,8 +461,8 @@ def _parse_filename(fname, meta, root):
     name = re.sub(r"\(\d{4}\)", "", name)
     name = name.strip(" -_.")
     
-    # Try to extract series index: T01, Tome 01, Vol. 1, #1, etc.
-    idx_match = re.search(r"(?:T|Tome|Vol\.?|Volume|#)\s*(\d+)", name, re.IGNORECASE)
+    # Try to extract series index: T01, Tome 01, Vol. 1, Vol_ 1, #1, etc.
+    idx_match = re.search(r"(?:T|Tome|Vol[.\s_]*|Volume|#)\s*(\d+)", name, re.IGNORECASE)
     if idx_match:
         meta["series_index"] = float(idx_match.group(1))
     
@@ -495,6 +495,21 @@ def _parse_filename(fname, meta, root):
         # Only set series if it's different from the title
         if parent != meta["title"] and len(parent) > 2:
             meta["series"] = parent
+            meta["collection_path"] = parent
+
+    # Detect series from "Series Name, Vol N" / "Series Name Vol N" title patterns
+    if not meta["series"]:
+        vol_in_title = re.match(
+            r'^(.+?),?\s+(?:Vol[.\s_]*|Volume\s*|Tome\s*|T)(\d+)\s*$',
+            meta["title"], re.IGNORECASE
+        )
+        if vol_in_title:
+            candidate = vol_in_title.group(1).strip()
+            if len(candidate) >= 3:
+                meta["series"] = candidate
+                meta["collection_path"] = candidate
+                if not meta["series_index"]:
+                    meta["series_index"] = float(vol_in_title.group(2))
 
 
 def _extract_cover(full_path, ext, cover_data):
@@ -662,10 +677,38 @@ def assign_collections(conn=None):
                                 total_assigned += 1
                         break  # One prefix per author group is enough
     
+    # ── Method 4: Extract series from "Title, Vol N" / "Title Vol N" patterns ──
+    # Handles titles like "The Unwanted Undead Adventurer, Vol_ 04"
+    orphans = conn.execute(
+        "SELECT id, title FROM books WHERE (series IS NULL OR series='') "
+    ).fetchall()
+
+    vol_re = re.compile(
+        r'^(.+?),?\s+(?:Vol[.\s_]*|Volume\s*|Tome\s*|T)(\d+)\s*$', re.IGNORECASE
+    )
+    for r in orphans:
+        m = vol_re.match(r["title"] or "")
+        if not m:
+            continue
+        series_name = m.group(1).strip()
+        vol_num = float(m.group(2))
+        if len(series_name) < 3:
+            continue
+        low = series_name.lower()
+        if low in existing_series:
+            series_name = existing_series[low]
+        else:
+            existing_series[low] = series_name
+        conn.execute(
+            "UPDATE books SET series=?, collection_path=?, series_index=? WHERE id=?",
+            (series_name, series_name, vol_num, r["id"])
+        )
+        total_assigned += 1
+
     conn.commit()
     if close_conn:
         conn.close()
-    
+
     logger.info(f"Collection assignment: {total_assigned} books assigned to series")
     return total_assigned
 

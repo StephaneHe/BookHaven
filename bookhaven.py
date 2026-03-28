@@ -1143,10 +1143,27 @@ def api_enrichment_start():
 
 # ── API: Upload ──────────────────────────────────────────────────────────────
 
+def _find_genre_subfolder(lib_path, genre):
+    """Find an existing subfolder in lib_path whose name matches genre (case-insensitive).
+    Returns the full path if found, else None.
+    """
+    if not genre or not os.path.isdir(lib_path):
+        return None
+    genre_lower = genre.lower()
+    try:
+        for entry in os.scandir(lib_path):
+            if entry.is_dir() and entry.name.lower() == genre_lower:
+                return entry.path
+    except Exception:
+        pass
+    return None
+
+
 def _determine_placement(meta, ext):
     """Determine the best library folder for an uploaded book.
 
-    Returns (category, dest_folder, reason).
+    Returns (category, dest_folder, reason, is_new_folder).
+    is_new_folder=True when dest_folder does not yet exist on disk.
     """
     # Base category from format
     if ext in ('.cbr', '.cbz'):
@@ -1163,9 +1180,11 @@ def _determine_placement(meta, ext):
     )
 
     series = (meta.get('series') or '').strip()
+    # Use only the first (primary) genre
+    genre = (meta.get('genre') or '').split(',')[0].strip()
 
+    # 1. Series takes priority
     if series:
-        # Check if series already exists in DB → reuse its folder
         conn = database.get_db()
         row = conn.execute(
             "SELECT path FROM books WHERE series = ? LIMIT 1", (series,)
@@ -1178,13 +1197,23 @@ def _determine_placement(meta, ext):
                 norm_lib = os.path.normpath(lib)
                 if os.path.normpath(existing_folder).startswith(norm_lib):
                     cat = os.path.basename(lib)
-                    return cat, existing_folder, f"Existing series '{series}'"
+                    return cat, existing_folder, f"Existing series '{series}'", False
 
-        # New series → create subfolder in category library
-        return category, os.path.join(lib_path, series), f"New series folder '{series}'"
+        # New series subfolder
+        new_folder = os.path.join(lib_path, series)
+        return category, new_folder, f"New series folder '{series}'", not os.path.isdir(new_folder)
 
-    # No series → category root
-    return category, lib_path, f"{category} library root"
+    # 2. No series — try to match genre to an existing subfolder
+    if genre and category in ('Books', 'Education', 'Magazines'):
+        existing = _find_genre_subfolder(lib_path, genre)
+        if existing:
+            return category, existing, f"Genre folder '{os.path.basename(existing)}'", False
+        # Suggest creating a new genre subfolder
+        new_folder = os.path.join(lib_path, genre.capitalize())
+        return category, new_folder, f"New genre folder '{genre.capitalize()}'", True
+
+    # 3. Fallback: category root (always exists)
+    return category, lib_path, f"{category} library root", False
 
 
 @app.route("/api/upload/analyze", methods=["POST"])
@@ -1216,7 +1245,7 @@ def api_upload_analyze():
         meta = scanner._extract_metadata(temp_path, filename, ext, 'Books', root)
 
         # Determine placement
-        category, dest_folder, reason = _determine_placement(meta, ext)
+        category, dest_folder, reason, is_new_folder = _determine_placement(meta, ext)
         meta['category'] = category
 
         _pending_uploads[temp_id] = {
@@ -1236,9 +1265,10 @@ def api_upload_analyze():
             'series_index': meta.get('series_index', 0),
             'category': category,
             'format': ext.lstrip('.'),
-            'genre': meta.get('genre', ''),
+            'genre': meta.get('genre', '').split(',')[0].strip(),
             'dest_folder': dest_folder,
             'placement_reason': reason,
+            'is_new_folder': is_new_folder,
         })
     except Exception as e:
         try:
@@ -1332,8 +1362,9 @@ def api_upload_confirm():
 @app.route("/api/upload/suggest-path")
 @login_required
 def api_upload_suggest_path():
-    """Return a suggested destination folder given series + category."""
+    """Return a suggested destination folder given series/genre + category."""
     series = request.args.get('series', '').strip()
+    genre = request.args.get('genre', '').strip()
     category = request.args.get('category', 'Books').strip()
 
     lib_path = next(
@@ -1353,16 +1384,35 @@ def api_upload_suggest_path():
                 if os.path.normpath(existing_folder).startswith(os.path.normpath(lib)):
                     return jsonify({
                         "dest_folder": existing_folder,
-                        "reason": f"Existing series '{series}'"
+                        "reason": f"Existing series '{series}'",
+                        "is_new_folder": False,
                     })
+        new_folder = os.path.join(lib_path, series)
         return jsonify({
-            "dest_folder": os.path.join(lib_path, series),
-            "reason": f"New series folder '{series}'"
+            "dest_folder": new_folder,
+            "reason": f"New series folder '{series}'",
+            "is_new_folder": not os.path.isdir(new_folder),
+        })
+
+    if genre and category in ('Books', 'Education', 'Magazines'):
+        existing = _find_genre_subfolder(lib_path, genre)
+        if existing:
+            return jsonify({
+                "dest_folder": existing,
+                "reason": f"Genre folder '{os.path.basename(existing)}'",
+                "is_new_folder": False,
+            })
+        new_folder = os.path.join(lib_path, genre.capitalize())
+        return jsonify({
+            "dest_folder": new_folder,
+            "reason": f"New genre folder '{genre.capitalize()}'",
+            "is_new_folder": True,
         })
 
     return jsonify({
         "dest_folder": lib_path,
-        "reason": f"{category} library root"
+        "reason": f"{category} library root",
+        "is_new_folder": False,
     })
 
 
