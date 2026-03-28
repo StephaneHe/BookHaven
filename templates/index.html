@@ -1798,12 +1798,21 @@ async function openPdf(bookId) {
       startPage = parseInt(prog.current_location) || 1;
     }
 
-    // Render all pages (or lazy-load visible ones)
+    // Get page 1 dimensions to estimate placeholder heights
     const totalPages = pdf.numPages;
+    const firstPage = await pdf.getPage(1);
+    const estScale = Math.min(
+      (container.clientWidth - 32) / firstPage.getViewport({scale: 1}).width, 2
+    );
+    const estHeight = firstPage.getViewport({ scale: estScale }).height;
+
+    // Create page placeholders with estimated height so scroll positions work
     for (let i = 1; i <= totalPages; i++) {
       const pageDiv = document.createElement('div');
       pageDiv.id = `pdf-page-${i}`;
       pageDiv.dataset.page = i;
+      pageDiv.style.minHeight = estHeight + 'px';
+      pageDiv.style.width = '100%';
       container.appendChild(pageDiv);
     }
 
@@ -1824,6 +1833,7 @@ async function openPdf(bookId) {
           const canvas = document.createElement('canvas');
           canvas.width = viewport.width;
           canvas.height = viewport.height;
+          div.style.minHeight = '';
           div.appendChild(canvas);
           await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
         }
@@ -1834,10 +1844,8 @@ async function openPdf(bookId) {
 
     // Scroll to saved page
     if (startPage > 1) {
-      setTimeout(() => {
-        const target = document.getElementById(`pdf-page-${startPage}`);
-        if (target) target.scrollIntoView();
-      }, 500);
+      const target = document.getElementById(`pdf-page-${startPage}`);
+      if (target) target.scrollIntoView();
     }
 
     // Track scroll for progress
