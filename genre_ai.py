@@ -18,20 +18,16 @@ KNOWN_GENRES = [
 # Strict lookup: lowercase -> canonical
 _CANONICAL = {g.lower(): g for g in KNOWN_GENRES}
 
-_PROMPT_TEMPLATE = """Tu es un classificateur de livres. À partir des informations fournies, donne entre 1 et 3 genres littéraires parmi UNIQUEMENT cette liste :
-
-{genres}
-
-RÈGLES STRICTES :
-- Choisis entre 1 et 3 genres pertinents, séparés par des virgules.
-- Utilise UNIQUEMENT des genres de la liste ci-dessus, copiés exactement.
-- Le genre principal en premier.
-- Pas d'explication, pas de phrase, juste les genres séparés par des virgules.
+_PROMPT_TEMPLATE = """Voici les informations sur un livre :
 
 Titre : {title}
 Auteur : {author}
 {description_line}
-Genres :"""
+Parmi cette liste UNIQUEMENT : {genres}
+
+Quel est le genre de ce livre ? Choisis entre 1 et 3 genres de la liste ci-dessus, séparés par des virgules. Le genre principal en premier. Réponds uniquement avec les genres, sans explication.
+
+Genre :"""
 
 
 def classify_genre(title, author="", description=""):
