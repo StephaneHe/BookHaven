@@ -349,12 +349,12 @@ def api_classify_genre(book_id):
     try:
         from genre_ai import classify_genre
         conn = database.get_db()
-        book = conn.execute("SELECT id, title, author, genre FROM books WHERE id = ?", (book_id,)).fetchone()
+        book = conn.execute("SELECT id, title, author, genre, description FROM books WHERE id = ?", (book_id,)).fetchone()
         if not book:
             conn.close()
             return jsonify({"error": "Book not found"}), 404
 
-        genre = classify_genre(book["title"], book["author"])
+        genre = classify_genre(book["title"], book["author"], book["description"] or "")
         if not genre:
             conn.close()
             return jsonify({"error": "AI classification unavailable (is Ollama running?)"}), 503

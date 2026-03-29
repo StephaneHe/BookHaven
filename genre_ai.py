@@ -18,7 +18,7 @@ KNOWN_GENRES = [
 # Strict lookup: lowercase -> canonical
 _CANONICAL = {g.lower(): g for g in KNOWN_GENRES}
 
-_PROMPT_TEMPLATE = """Tu es un classificateur de livres. À partir du titre et de l'auteur, donne entre 1 et 3 genres littéraires parmi UNIQUEMENT cette liste :
+_PROMPT_TEMPLATE = """Tu es un classificateur de livres. À partir des informations fournies, donne entre 1 et 3 genres littéraires parmi UNIQUEMENT cette liste :
 
 {genres}
 
@@ -30,11 +30,11 @@ RÈGLES STRICTES :
 
 Titre : {title}
 Auteur : {author}
-
+{description_line}
 Genres :"""
 
 
-def classify_genre(title, author=""):
+def classify_genre(title, author="", description=""):
     """Ask the local LLM to classify a book's genres.
 
     Returns a comma-separated string of 1-3 genres from KNOWN_GENRES,
@@ -43,10 +43,16 @@ def classify_genre(title, author=""):
     if not title:
         return ""
 
+    desc_line = ""
+    if description:
+        # Truncate to avoid blowing up the prompt
+        desc_line = "Description : " + description[:300]
+
     prompt = _PROMPT_TEMPLATE.format(
         genres=", ".join(KNOWN_GENRES),
         title=title,
         author=author or "inconnu",
+        description_line=desc_line,
     )
 
     try:

@@ -274,7 +274,7 @@ def _extract_metadata(full_path, fname, ext, category, root):
 
     # Fallback 2: ask local LLM via Ollama
     if not meta["genre"]:
-        meta["genre"] = classify_genre(meta["title"], meta["author"])
+        meta["genre"] = classify_genre(meta["title"], meta["author"], meta.get("description", ""))
 
     return meta
 

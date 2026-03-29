@@ -505,6 +505,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 /* ── Reader Views ──────────────────────────────────────────── */
 #reader-view {
   background: #000;
+  height: 100vh; max-height: 100vh; overflow: hidden;
 }
 .reader-topbar {
   background: #111; padding: 8px 16px;
@@ -1639,14 +1640,7 @@ async function openBook(id) {
     document.getElementById('reader-title').textContent = state.currentBook.title;
     showView('reader-view');
 
-    // Ensure a reading progress entry exists (so it appears in Continue Reading)
-    if (!state.currentBook.progress) {
-      fetch(`/api/books/${id}/progress`, {
-        method: 'PUT',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({ progress: 0, current_location: '' }),
-      }).catch(() => {});
-    }
+    // Progress entry will be created by the reader (PDF/EPUB/Comic) on open
 
     const fmt = state.currentBook.format;
     // Hide all reader containers
@@ -1671,8 +1665,9 @@ async function openBook(id) {
 }
 
 async function closeReader() {
-  // Save progress in background - don't block UI
-  saveCurrentProgress();
+  // Flush any pending debounced save immediately
+  clearTimeout(state.saveProgressTimer);
+  await saveCurrentProgress();
   // Clean up readers
   if (state.epubBook) {
     try { state.epubBook.destroy(); } catch(e) {}
