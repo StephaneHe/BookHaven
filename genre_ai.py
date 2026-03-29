@@ -12,7 +12,7 @@ KNOWN_GENRES = [
     "Article", "Autres", "Aventure", "Biographie", "Bit-Lit", "Comics",
     "Drame", "Espionnage", "Essai", "Fantastique", "Fantasy", "Historique",
     "Horreur", "Humour", "Jeunesse", "Philosophie", "Policier",
-    "Romance", "Science-Fiction", "Thriller",
+    "Romance", "Science-Fiction", "Sciences & Tech", "Thriller",
 ]
 
 # Strict lookup: lowercase -> canonical

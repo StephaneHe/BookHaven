@@ -178,8 +178,8 @@ def _get_category(lib_path):
 _KNOWN_GENRES = {
     "article", "autres", "aventure", "bit-lit", "drame", "espionnage",
     "fantastique", "fantasy", "historique", "jeunesse", "philosophie",
-    "policier", "romance", "science-fiction", "thriller", "horreur",
-    "humour", "biographie", "essai", "poesie", "info",
+    "policier", "romance", "science-fiction", "sciences & tech", "thriller",
+    "horreur", "humour", "biographie", "essai", "poesie", "info",
 }
 
 # Maps common EPUB dc:subject values and LLM variants to canonical genres
@@ -207,9 +207,10 @@ def normalize_genre(raw_genre):
         return ""
     low = raw_genre.strip().lower()
     # Direct match against known genres
+    _DISPLAY = {"bit-lit": "Bit-Lit", "science-fiction": "Science-Fiction", "sciences & tech": "Sciences & Tech"}
     for g in _KNOWN_GENRES:
         if g == low:
-            return g.capitalize() if g != "bit-lit" else "Bit-Lit"
+            return _DISPLAY.get(g, g.capitalize())
     # Check aliases
     if low in _GENRE_ALIASES:
         return _GENRE_ALIASES[low]
