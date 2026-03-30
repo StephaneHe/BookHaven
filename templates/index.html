@@ -1547,13 +1547,15 @@ async function showBookInfo(bookId) {
       html += '<div class="info-row"><span class="info-label">Series</span><span class="info-value"><a href="#" class="series-link" onclick="closeBookInfo();browseInto(\'' + safeSeriesJs + '\');return false;">' + esc(seriesLabel) + '</a></span></div>';
     }
     add('Category', b.category);
-    // Genre row with AI classify button
-    // Genre row with tags + AI button
+    // Genre row with edit, AI button, and lock indicator
     const genreTags = (b.genre || '').split(',').map(g => g.trim()).filter(Boolean)
       .map(g => '<span class="genre-tag">' + esc(g) + '</span>').join('');
-    html += '<div class="info-row"><span class="info-label">Genre</span><span class="info-value"><span id="modal-genre-val">'
-      + (genreTags || '<span style="color:#666">—</span>')
-      + '</span><button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="Ask AI to detect genre">AI</button></span></div>';
+    const lockIcon = b.genre_locked ? ' <span title="Manually set" style="color:#f90;font-size:11px">&#128274;</span>' : '';
+    html += '<div class="info-row"><span class="info-label">Genre</span><span class="info-value">'
+      + '<span id="modal-genre-val">' + (genreTags || '<span style="color:#666">—</span>') + '</span>' + lockIcon
+      + '<button class="ai-genre-btn" onclick="editGenre(' + bookId + ',\'' + esc(b.genre || '') + '\')" title="Edit genre manually">&#9998;</button>'
+      + '<button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="Ask AI to detect genre">AI</button>'
+      + '</span></div>';
     add('Size', b.file_size ? (b.file_size / 1024 / 1024).toFixed(1) + ' MB' : '');
     html += '</div></div>';
     // Description block
@@ -1580,6 +1582,39 @@ async function showBookInfo(bookId) {
 
 function closeBookInfo() {
   document.getElementById('book-info-modal').classList.remove('active');
+}
+
+function editGenre(bookId, currentGenre) {
+  const genreEl = document.getElementById('modal-genre-val');
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = currentGenre;
+  input.style.cssText = 'background:#1a1a2e;color:#ccc;border:1px solid #555;border-radius:4px;padding:4px 8px;font-size:12px;width:100%';
+  genreEl.innerHTML = '';
+  genreEl.appendChild(input);
+  input.focus();
+
+  async function save() {
+    const genre = input.value.trim();
+    try {
+      const r = await fetch('/api/books/' + bookId + '/genre', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ genre }),
+      });
+      const data = await r.json();
+      if (r.ok) {
+        const tags = genre.split(',').map(g => g.trim()).filter(Boolean)
+          .map(g => '<span class="genre-tag">' + esc(g) + '</span>').join('');
+        genreEl.innerHTML = tags || '<span style="color:#666">—</span>';
+      } else {
+        alert(data.error || 'Failed to save');
+      }
+    } catch(e) { alert('Error saving genre'); }
+  }
+
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') showBookInfo(bookId); });
+  input.addEventListener('blur', save);
 }
 
 async function classifyGenre(bookId) {

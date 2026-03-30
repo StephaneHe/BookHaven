@@ -399,6 +399,26 @@ def api_convert_epub(book_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/books/<int:book_id>/genre", methods=["PUT"])
+@login_required
+def api_set_genre(book_id):
+    """Manually set a book's genre (locks it from AI changes)."""
+    try:
+        data = request.get_json()
+        genre = data.get("genre", "").strip()
+        conn = database.get_db()
+        conn.execute(
+            "UPDATE books SET genre = ?, genre_locked = 1, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (genre, book_id)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "genre": genre})
+    except Exception as e:
+        logger.error(f"Error in set_genre: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/books/<int:book_id>/classify-genre", methods=["POST"])
 @login_required
 def api_classify_genre(book_id):
@@ -406,10 +426,13 @@ def api_classify_genre(book_id):
     try:
         from genre_ai import classify_genre
         conn = database.get_db()
-        book = conn.execute("SELECT id, title, author, genre, description FROM books WHERE id = ?", (book_id,)).fetchone()
+        book = conn.execute("SELECT id, title, author, genre, description, genre_locked FROM books WHERE id = ?", (book_id,)).fetchone()
         if not book:
             conn.close()
             return jsonify({"error": "Book not found"}), 404
+        if book["genre_locked"]:
+            conn.close()
+            return jsonify({"error": "Genre was manually set and is locked"}), 409
 
         genre = classify_genre(book["title"], book["author"], book["description"] or "")
         if not genre:

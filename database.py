@@ -67,4 +67,10 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    try:
+        conn.execute("ALTER TABLE books ADD COLUMN genre_locked INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     conn.close()
