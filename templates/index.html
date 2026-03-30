@@ -1566,6 +1566,11 @@ async function showBookInfo(bookId) {
     addPath('Path', b.path);
     addPath('Filename', b.filename);
     add('Added', b.added_at);
+    // Convert to EPUB button for PDF books
+    if (b.format === 'pdf') {
+      html += '<div class="info-row" style="justify-content:center;padding:12px 0;border:none">'
+        + '<button class="ai-genre-btn" id="convert-epub-btn" onclick="convertToEpub(' + bookId + ')" style="padding:6px 16px;font-size:13px">Convert to EPUB</button></div>';
+    }
     document.getElementById('modal-body').innerHTML = html;
     document.getElementById('book-info-modal').classList.add('active');
   } catch(e) {
@@ -1601,6 +1606,30 @@ async function classifyGenre(bookId) {
     btn.style.background = '#a33';
   }
   setTimeout(() => { btn.textContent = 'AI'; btn.style.background = ''; btn.disabled = false; }, 3000);
+}
+
+async function convertToEpub(bookId) {
+  const btn = document.getElementById('convert-epub-btn');
+  btn.disabled = true;
+  btn.textContent = 'Converting...';
+  try {
+    const r = await fetch('/api/books/' + bookId + '/convert-epub', { method: 'POST' });
+    const data = await r.json();
+    if (r.ok) {
+      btn.textContent = 'Done!';
+      btn.style.background = '#2a6';
+      setTimeout(() => { closeBookInfo(); openBook(data.epub_id); }, 1000);
+    } else {
+      btn.textContent = 'Error';
+      btn.style.background = '#a33';
+      alert(data.error || 'Conversion failed');
+      setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
+    }
+  } catch(e) {
+    btn.textContent = 'Error';
+    btn.style.background = '#a33';
+    setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
+  }
 }
 
 async function removeFromReading(bookId) {

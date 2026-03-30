@@ -342,6 +342,63 @@ def api_book_detail(book_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/books/<int:book_id>/convert-epub", methods=["POST"])
+@login_required
+def api_convert_epub(book_id):
+    """Convert a PDF book to EPUB using Calibre."""
+    try:
+        import subprocess
+        conn = database.get_db()
+        book = conn.execute("SELECT id, path, filename, title, author, genre, format FROM books WHERE id = ?", (book_id,)).fetchone()
+        if not book:
+            conn.close()
+            return jsonify({"error": "Book not found"}), 404
+        if book["format"] != "pdf":
+            conn.close()
+            return jsonify({"error": "Only PDF books can be converted"}), 400
+
+        pdf_path = book["path"]
+        epub_path = os.path.splitext(pdf_path)[0] + ".epub"
+
+        # Check if EPUB already exists
+        if os.path.exists(epub_path):
+            conn.close()
+            return jsonify({"error": "EPUB version already exists"}), 409
+
+        # Run calibre conversion
+        result = subprocess.run(
+            ["ebook-convert", pdf_path, epub_path,
+             "--title", book["title"],
+             "--authors", book["author"] or "Unknown"],
+            capture_output=True, text=True, timeout=300
+        )
+        if result.returncode != 0:
+            logger.error(f"Calibre conversion failed: {result.stderr}")
+            conn.close()
+            return jsonify({"error": "Conversion failed: " + result.stderr[:200]}), 500
+
+        # Add the new EPUB to the database
+        file_size = os.path.getsize(epub_path)
+        epub_filename = os.path.basename(epub_path)
+        conn.execute("""
+            INSERT INTO books (path, filename, title, author, genre, series, series_index,
+            category, format, file_size, has_cover, page_count, description)
+            SELECT ?, ?, title, author, genre, series, series_index,
+            category, 'epub', ?, has_cover, 0, description
+            FROM books WHERE id = ?
+        """, (epub_path, epub_filename, file_size, book_id))
+        conn.commit()
+        new_id = conn.execute("SELECT id FROM books WHERE path = ?", (epub_path,)).fetchone()["id"]
+        conn.close()
+
+        return jsonify({"ok": True, "epub_id": new_id, "message": "Conversion successful"})
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Conversion timed out (max 5 min)"}), 504
+    except Exception as e:
+        logger.error(f"Error in convert_epub: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/books/<int:book_id>/classify-genre", methods=["POST"])
 @login_required
 def api_classify_genre(book_id):
