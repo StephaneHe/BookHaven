@@ -304,44 +304,35 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 }
 .sidebar-upload-btn:hover { background: #6a7ae0; }
 
-/* Book Info Modal */
-.modal-overlay {
-  display: none; position: fixed; inset: 0; z-index: 1000;
-  background: #000c; align-items: center; justify-content: center;
+/* Book Detail View */
+#detail-view { background: #0f0f1a; overflow-y: auto; }
+.detail-topbar {
+  background: #1a1a2e; padding: 12px 24px;
+  display: flex; align-items: center; gap: 16px;
+  border-bottom: 1px solid #252540; position: sticky; top: 0; z-index: 100;
 }
-.modal-overlay.active { display: flex; }
-.modal-box {
-  background: #1a1a2e; border: 1px solid #333; border-radius: 12px;
-  padding: 0; width: 520px; max-width: 90vw; max-height: 85vh;
-  overflow: hidden; box-shadow: 0 8px 32px #000a;
-}
-.modal-header {
-  display: flex; align-items: center; padding: 16px 20px;
-  border-bottom: 1px solid #252540;
-}
-.modal-header h3 { flex: 1; font-size: 16px; margin: 0; }
-.modal-close {
-  background: none; color: #888; font-size: 20px;
-  padding: 4px 8px; min-width: auto;
-}
-.modal-close:hover { color: #f55; background: none; }
-.modal-body {
-  padding: 20px; overflow-y: auto; max-height: calc(85vh - 56px);
-}
-.modal-body .info-row {
-  display: flex; padding: 8px 0; border-bottom: 1px solid #1f1f35;
-  font-size: 13px; gap: 12px;
-}
-.modal-body .info-row:last-child { border-bottom: none; }
-.modal-body .info-label {
-  color: #666; min-width: 90px; flex-shrink: 0; font-weight: 500;
-}
-.modal-body .info-value {
-  color: #ccc; word-break: break-all; flex: 1;
-}
-.modal-body .info-value.path { font-family: monospace; font-size: 12px; color: #999; }
-.modal-body .series-link { color: #7eb8f7; text-decoration: none; }
-.modal-body .series-link:hover { text-decoration: underline; }
+.detail-topbar .back-btn { background: #252540; border: 1px solid #333; padding: 6px 14px; border-radius: 6px; color: #ccc; font-size: 14px; cursor: pointer; }
+.detail-topbar .back-btn:hover { background: #7c5cff; border-color: #7c5cff; color: #fff; }
+.detail-topbar h2 { flex: 1; font-size: 18px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.detail-content { max-width: 900px; margin: 0 auto; padding: 32px 24px; }
+.detail-hero { display: flex; gap: 32px; margin-bottom: 32px; }
+.detail-cover { width: 220px; height: 330px; border-radius: 10px; object-fit: cover; flex-shrink: 0; background: #1a1a2e; }
+.detail-meta { flex: 1; }
+.detail-meta h1 { font-size: 24px; margin: 0 0 16px; }
+.detail-meta-table { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; font-size: 14px; align-items: baseline; }
+.detail-meta-label { color: #666; font-weight: 500; }
+.detail-meta-value { color: #ccc; }
+.detail-actions { display: flex; gap: 12px; margin-top: 24px; flex-wrap: wrap; }
+.detail-actions button { padding: 10px 20px; font-size: 14px; border-radius: 8px; cursor: pointer; }
+.detail-actions .primary-action { background: #7c8cf5; color: #fff; font-size: 16px; border: none; }
+.detail-actions .primary-action:hover { background: #6a7ae0; }
+.detail-description { margin-top: 24px; }
+.detail-description h3 { color: #888; font-size: 13px; text-transform: uppercase; margin-bottom: 8px; }
+.detail-description p { color: #bbb; line-height: 1.7; white-space: pre-wrap; }
+.detail-file-info { margin-top: 24px; font-size: 12px; color: #555; }
+.detail-file-info div { margin-bottom: 4px; }
+.series-link { color: #7eb8f7; text-decoration: none; }
+.series-link:hover { text-decoration: underline; }
 .genre-tag {
   display: inline-block; background: #2a2a4a; border: 1px solid #444; border-radius: 4px;
   padding: 1px 7px; font-size: 12px; color: #bcd; margin: 1px 3px 1px 0;
@@ -353,26 +344,6 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 }
 .ai-genre-btn:hover { background: #7c8cf5; color: #fff; }
 .ai-genre-btn:disabled { opacity: 0.5; cursor: wait; }
-.modal-body .info-description {
-  padding: 12px 0; border-bottom: 1px solid #1f1f35; font-size: 13px;
-}
-.modal-body .info-description .desc-label {
-  color: #666; font-weight: 500; margin-bottom: 6px;
-}
-.modal-body .info-description .desc-text {
-  color: #bbb; line-height: 1.6; white-space: pre-wrap; max-height: 200px;
-  overflow-y: auto; padding-right: 8px;
-}
-.modal-body .info-description .desc-text::-webkit-scrollbar { width: 4px; }
-.modal-body .info-description .desc-text::-webkit-scrollbar-thumb { background: #444; border-radius: 2px; }
-.modal-top {
-  display: flex; gap: 16px; padding-bottom: 12px; border-bottom: 1px solid #1f1f35; margin-bottom: 4px;
-}
-.modal-top .modal-cover {
-  width: 120px; height: 180px; border-radius: 6px; object-fit: cover; flex-shrink: 0;
-  background: #1a1a2e;
-}
-.modal-top .modal-meta { flex: 1; }
 .enrichment-bar {
   position: fixed; bottom: 0; left: 0; right: 0; background: #1a1a2e;
   border-top: 1px solid #252540; padding: 6px 16px; font-size: 12px;
@@ -505,8 +476,9 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 /* ── Reader Views ──────────────────────────────────────────── */
 #reader-view {
   background: #000;
-  height: 100vh; max-height: 100vh; overflow: hidden;
+  height: 100vh; max-height: 100vh;
 }
+#reader-view.pdf-active { overflow: hidden; }
 .reader-topbar {
   background: #111; padding: 8px 16px;
   display: flex; align-items: center; gap: 12px;
@@ -805,12 +777,12 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .user-avatar { width: 44px; height: 44px; font-size: 18px; }
 
   /* ── T09: Modals ─────────────────────────────────────── */
-  .modal-box {
-    width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh;
-    border-radius: 0; margin: 0;
-  }
-  .modal-close { width: 44px; height: 44px; font-size: 24px; min-width: 44px; }
-  .modal-cover { width: 80px; height: 120px; }
+  .detail-hero { flex-direction: column; align-items: center; gap: 20px; text-align: center; }
+  .detail-cover { width: 160px; height: 240px; }
+  .detail-meta h1 { font-size: 18px; }
+  .detail-actions { justify-content: center; }
+  .detail-content { padding: 20px 16px; }
+  .detail-topbar { padding: 10px 16px; }
   .format-picker { width: 90vw; max-width: 90vw; }
   .fp-btn { min-height: 48px; }
 
@@ -956,6 +928,15 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
       <div class="pagination" id="pagination"></div>
     </div>
   </div>
+</div>
+
+<!-- ═══ DETAIL VIEW ══════════════════════════════════════════ -->
+<div id="detail-view" class="view">
+  <div class="detail-topbar">
+    <button class="back-btn" onclick="closeDetail()">← Back</button>
+    <h2 id="detail-title">Book Info</h2>
+  </div>
+  <div class="detail-content" id="detail-body"></div>
 </div>
 
 <!-- ═══ UPLOAD MODAL ══════════════════════════════════════════ -->
@@ -1119,7 +1100,12 @@ async function checkAuth() {
     if (r.ok) {
       const data = await r.json();
       state.user = data;
-      showLibrary();
+      const bookMatch = location.hash.match(/^#book\/(\d+)$/);
+      if (bookMatch) {
+        showBookDetail(parseInt(bookMatch[1]));
+      } else {
+        showLibrary();
+      }
       return;
     }
   } catch(e) {}
@@ -1162,7 +1148,12 @@ async function doLogin() {
     const data = await r.json();
     if (r.ok && data.ok) {
       state.user = data;
-      showLibrary();
+      const bookMatch = location.hash.match(/^#book\/(\d+)$/);
+      if (bookMatch) {
+        showBookDetail(parseInt(bookMatch[1]));
+      } else {
+        showLibrary();
+      }
     } else {
       errEl.textContent = data.error || 'Login failed';
       errEl.style.display = 'block';
@@ -1301,11 +1292,7 @@ async function loadCategoryRows() {
         const badges = fmts.map(f =>
           `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${f.format.toUpperCase()}">${f.format}</span>`
         ).join('');
-        const cardClick = fmts.length > 1
-          ? `showFormatPicker(${JSON.stringify(fmts).replace(/"/g, '&quot;')}, '${esc(b.title)}')`
-          : `openBook(${fmts[0].id})`;
-        return `<div class="cat-card" onclick="${cardClick}">
-          <button class="info-btn" onclick="event.stopPropagation(); showBookInfo(${b.id})" title="Info">i</button>
+        return `<div class="cat-card" onclick="showBookDetail(${b.id})">
           <img src="/api/books/${b.id}/cover" loading="lazy" onerror="this.style.opacity='0.3'">
           <div class="format-badges">${badges}</div>
           <div class="cat-card-title" title="${esc(b.title)}">${esc(b.title)}</div>
@@ -1424,12 +1411,8 @@ async function loadBooks() {
         const badges = fmts.map(f =>
           `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${f.format.toUpperCase()}">${f.format}</span>`
         ).join('');
-        const cardClick = fmts.length > 1
-          ? `showFormatPicker(${JSON.stringify(fmts).replace(/"/g, '&quot;')}, '${esc(item.title)}')`
-          : `openBook(${fmts[0].id})`;
         return `
-        <div class="book-card" onclick="${cardClick}">
-          <button class="info-btn" onclick="event.stopPropagation(); showBookInfo(${item.id})" title="Info">i</button>
+        <div class="book-card" onclick="showBookDetail(${item.id})">
           <img src="/api/books/${item.id}/cover" loading="lazy"
                onerror="this.style.opacity='0.3'">
           <div class="format-badges">${badges}</div>
@@ -1517,7 +1500,6 @@ async function loadContinueReading() {
     row.innerHTML = books.map(b => `
       <div class="continue-card" onclick="openBook(${b.id})">
         <button class="remove-reading" onclick="event.stopPropagation(); removeFromReading(${b.id})" title="Remove">✕</button>
-        <button class="info-btn" onclick="event.stopPropagation(); showBookInfo(${b.id})" title="Info">i</button>
         <img src="/api/books/${b.id}/cover"
              onerror="this.style.opacity='0.3'">
         <div class="progress-bar"><div class="fill" style="width:${b.progress}%"></div></div>
@@ -1527,65 +1509,67 @@ async function loadContinueReading() {
   } catch(e) {}
 }
 
-async function showBookInfo(bookId) {
+async function showBookDetail(bookId) {
+  showView('detail-view');
+  location.hash = '#book/' + bookId;
+  const body = document.getElementById('detail-body');
+  body.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
   try {
     const r = await fetch('/api/books/' + bookId);
     const b = await r.json();
-    document.getElementById('modal-title').textContent = b.title || 'Book Info';
-    let html = '';
-    // Top section: cover + core metadata side by side
-    html += '<div class="modal-top">';
-    html += '<img class="modal-cover" src="/api/books/' + bookId + '/cover" onerror="this.style.display=\'none\'">';
-    html += '<div class="modal-meta">';
-    const add = (label, val) => { if (val) html += '<div class="info-row"><span class="info-label">' + label + '</span><span class="info-value">' + esc(String(val)) + '</span></div>'; };
-    add('Author', b.author);
-    add('Format', b.format ? b.format.toUpperCase() : '');
-    add('Pages', b.page_count);
-    if (b.series) {
-      const seriesLabel = b.series + (b.series_index ? ' #' + b.series_index : '');
-      const safeSeriesJs = b.series.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
-      html += '<div class="info-row"><span class="info-label">Series</span><span class="info-value"><a href="#" class="series-link" onclick="closeBookInfo();browseInto(\'' + safeSeriesJs + '\');return false;">' + esc(seriesLabel) + '</a></span></div>';
-    }
-    add('Category', b.category);
-    // Genre row with edit, AI button, and lock indicator
+    document.getElementById('detail-title').textContent = b.title || 'Book Info';
     const genreTags = (b.genre || '').split(',').map(g => g.trim()).filter(Boolean)
       .map(g => '<span class="genre-tag">' + esc(g) + '</span>').join('');
-    const lockIcon = b.genre_locked ? ' <span title="Manually set" style="color:#f90;font-size:11px">&#128274;</span>' : '';
-    html += '<div class="info-row"><span class="info-label">Genre</span><span class="info-value">'
-      + '<span id="modal-genre-val">' + (genreTags || '<span style="color:#666">—</span>') + '</span>' + lockIcon
-      + '<button class="ai-genre-btn" onclick="editGenre(' + bookId + ',\'' + esc(b.genre || '') + '\')" title="Edit genre manually">&#9998;</button>'
-      + '<button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="Ask AI to detect genre">AI</button>'
-      + '</span></div>';
-    add('Size', b.file_size ? (b.file_size / 1024 / 1024).toFixed(1) + ' MB' : '');
-    html += '</div></div>';
-    // Description block
-    if (b.description) {
-      html += '<div class="info-description"><div class="desc-label">Description</div>';
-      html += '<div class="desc-text">' + esc(b.description) + '</div></div>';
+    const lockIcon = b.genre_locked ? ' <span title="Manually set" style="color:#f90">&#128274;</span>' : '';
+    let html = '<div class="detail-hero">';
+    html += '<img class="detail-cover" src="/api/books/' + bookId + '/cover" onerror="this.style.opacity=0.3">';
+    html += '<div class="detail-meta">';
+    html += '<h1>' + esc(b.title) + '</h1>';
+    html += '<div class="detail-meta-table">';
+    const row = (l, v) => { if (v) html += '<span class="detail-meta-label">' + l + '</span><span class="detail-meta-value">' + esc(String(v)) + '</span>'; };
+    row('Author', b.author);
+    if (b.series) {
+      const sl = b.series + (b.series_index ? ' #' + b.series_index : '');
+      const ss = b.series.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      html += '<span class="detail-meta-label">Series</span><span class="detail-meta-value"><a href="#" class="series-link" onclick="closeDetail();browseInto(\'' + ss + '\');return false;">' + esc(sl) + '</a></span>';
     }
-    // File paths
-    const addPath = (label, val) => { if (val) html += '<div class="info-row"><span class="info-label">' + label + '</span><span class="info-value path">' + esc(String(val)) + '</span></div>'; };
-    addPath('Path', b.path);
-    addPath('Filename', b.filename);
-    add('Added', b.added_at);
-    // Convert to EPUB button for PDF books
+    row('Category', b.category);
+    html += '<span class="detail-meta-label">Genre</span><span class="detail-meta-value">'
+      + '<span id="detail-genre-val">' + (genreTags || '<span style="color:#666">&mdash;</span>') + '</span>' + lockIcon
+      + ' <button class="ai-genre-btn" onclick="editGenre(' + bookId + ',\'' + esc(b.genre || '') + '\')" title="Edit">&#9998;</button>'
+      + '<button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="AI genre">AI</button></span>';
+    row('Format', b.format ? b.format.toUpperCase() : '');
+    row('Pages', b.page_count);
+    row('Size', b.file_size ? (b.file_size / 1048576).toFixed(1) + ' MB' : '');
+    html += '</div>'; // meta-table
+    // Actions
+    html += '<div class="detail-actions">';
+    html += '<button class="primary-action" onclick="openBook(' + bookId + ')">Read</button>';
     if (b.format === 'pdf') {
-      html += '<div class="info-row" style="justify-content:center;padding:12px 0;border:none">'
-        + '<button class="ai-genre-btn" id="convert-epub-btn" onclick="convertToEpub(' + bookId + ')" style="padding:6px 16px;font-size:13px">Convert to EPUB</button></div>';
+      html += '<button class="secondary" id="convert-epub-btn" onclick="convertToEpub(' + bookId + ')">Convert to EPUB</button>';
     }
-    document.getElementById('modal-body').innerHTML = html;
-    document.getElementById('book-info-modal').classList.add('active');
+    html += '</div>';
+    html += '</div></div>'; // meta + hero
+    if (b.description) {
+      html += '<div class="detail-description"><h3>Description</h3><p>' + esc(b.description) + '</p></div>';
+    }
+    html += '<div class="detail-file-info">';
+    if (b.path) html += '<div>Path: <span style="font-family:monospace">' + esc(b.path) + '</span></div>';
+    if (b.added_at) html += '<div>Added: ' + esc(b.added_at) + '</div>';
+    html += '</div>';
+    body.innerHTML = html;
   } catch(e) {
-    console.error('Error loading book info:', e);
+    body.innerHTML = '<div class="loading">Error loading book details</div>';
   }
 }
 
-function closeBookInfo() {
-  document.getElementById('book-info-modal').classList.remove('active');
+function closeDetail() {
+  location.hash = '';
+  showView('library-view');
 }
 
 function editGenre(bookId, currentGenre) {
-  const genreEl = document.getElementById('modal-genre-val');
+  const genreEl = document.getElementById('detail-genre-val');
   const input = document.createElement('input');
   input.type = 'text';
   input.value = currentGenre;
@@ -1613,13 +1597,13 @@ function editGenre(bookId, currentGenre) {
     } catch(e) { alert('Error saving genre'); }
   }
 
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); if (e.key === 'Escape') showBookInfo(bookId); });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.stopPropagation(); save(); } if (e.key === 'Escape') { e.stopPropagation(); showBookDetail(bookId); } });
   input.addEventListener('blur', save);
 }
 
 async function classifyGenre(bookId) {
   const btn = document.querySelector('.ai-genre-btn');
-  const genreEl = document.getElementById('modal-genre-val');
+  const genreEl = document.getElementById('detail-genre-val');
   btn.disabled = true;
   btn.textContent = '...';
   try {
@@ -1653,7 +1637,7 @@ async function convertToEpub(bookId) {
     if (r.ok) {
       btn.textContent = 'Done!';
       btn.style.background = '#2a6';
-      setTimeout(() => { closeBookInfo(); openBook(data.epub_id); }, 1000);
+      setTimeout(() => { showBookDetail(data.epub_id); }, 1000);
     } else {
       btn.textContent = 'Error';
       btn.style.background = '#a33';
@@ -1688,6 +1672,17 @@ document.addEventListener('DOMContentLoaded', () => {
   // Keyboard navigation in reader
   document.addEventListener('keydown', handleReaderKeys);
   checkAuth();
+  // Hash-based deep link navigation
+  window.addEventListener('hashchange', () => {
+    const m = location.hash.match(/^#book\/(\d+)$/);
+    if (m && state.user) {
+      showBookDetail(parseInt(m[1]));
+    } else if (!location.hash || location.hash === '#') {
+      if (document.getElementById('detail-view').classList.contains('active')) {
+        showView('library-view');
+      }
+    }
+  });
   // Register service worker for PWA
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('/static/sw.js').catch(() => {});
   // Resume scan progress bar if a scan is already running
@@ -1702,6 +1697,7 @@ async function openBook(id) {
     const r = await fetch(`/api/books/${id}`);
     state.currentBook = await r.json();
     document.getElementById('reader-title').textContent = state.currentBook.title;
+    location.hash = '';
     showView('reader-view');
 
     // Progress entry will be created by the reader (PDF/EPUB/Comic) on open
@@ -1711,6 +1707,7 @@ async function openBook(id) {
     document.getElementById('epub-container').style.display = 'none';
     document.getElementById('pdf-container').style.display = 'none';
     document.getElementById('pdf-back-btn').style.display = 'none';
+    document.getElementById('reader-view').classList.remove('pdf-active');
     document.getElementById('comic-container').style.display = 'none';
 
     if (fmt === 'epub') {
@@ -1776,6 +1773,8 @@ async function openEpub(bookId) {
     const book = ePub(buf);
     state.epubBook = book;
 
+    book.on('openFailed', (err) => console.error('EPUB openFailed:', err));
+
     // Clear loading message before epub.js renders its iframe
     area.innerHTML = '';
 
@@ -1783,8 +1782,16 @@ async function openEpub(bookId) {
       width: area.clientWidth,
       height: areaH,
       spread: 'none',
+      allowScriptedContent: true,
     });
     state.epubRendition = rendition;
+
+    // Override problematic publisher CSS for readability
+    rendition.themes.default({
+      'body': { 'max-width': '100% !important', 'margin': '0 !important', 'padding': '8px !important' },
+      'img': { 'max-width': '100% !important', 'height': 'auto !important' },
+      'p, div, span': { 'font-size': 'inherit !important' },
+    });
 
     // Restore progress
     const prog = state.currentBook.progress;
@@ -1841,6 +1848,7 @@ function epubNext() { if (state.epubRendition) state.epubRendition.next(); }
 async function openPdf(bookId) {
   const container = document.getElementById('pdf-container');
   container.style.display = 'flex';
+  document.getElementById('reader-view').classList.add('pdf-active');
   document.getElementById('pdf-back-btn').style.display = 'block';
   container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading PDF...</div>';
 
@@ -2009,6 +2017,16 @@ async function saveCurrentProgress() {
 
 // ── Keyboard Navigation ─────────────────────────────────────
 function handleReaderKeys(e) {
+  if (e.key === 'Escape') {
+    if (document.getElementById('format-picker-overlay').classList.contains('active')) {
+      closeFormatPicker();
+    } else if (document.getElementById('detail-view').classList.contains('active')) {
+      closeDetail();
+    } else if (document.getElementById('reader-view').classList.contains('active')) {
+      closeReader();
+    }
+    return;
+  }
   if (!document.getElementById('reader-view').classList.contains('active')) return;
   const fmt = state.currentBook?.format;
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
@@ -2017,14 +2035,6 @@ function handleReaderKeys(e) {
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     if (fmt === 'epub') epubNext();
     else if (fmt === 'cbr' || fmt === 'cbz') comicNext();
-  } else if (e.key === 'Escape') {
-    if (document.getElementById('format-picker-overlay').classList.contains('active')) {
-      closeFormatPicker();
-    } else if (document.getElementById('book-info-modal').classList.contains('active')) {
-      closeBookInfo();
-    } else {
-      closeReader();
-    }
   }
 }
 
@@ -2339,15 +2349,6 @@ document.addEventListener('DOMContentLoaded', () => {
 </script>
 
 <!-- Book Info Modal -->
-<div class="modal-overlay" id="book-info-modal" onclick="if(event.target===this)closeBookInfo()">
-  <div class="modal-box">
-    <div class="modal-header">
-      <h3 id="modal-title">Book Info</h3>
-      <button class="modal-close" onclick="closeBookInfo()">✕</button>
-    </div>
-    <div class="modal-body" id="modal-body"></div>
-  </div>
-</div>
 <div class="enrichment-bar" id="enrichment-bar">
   <div class="enr-spinner"></div>
   <span id="enr-phase">Enriching...</span>
