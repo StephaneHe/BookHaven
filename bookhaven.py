@@ -56,6 +56,7 @@ logger = logging.getLogger("bookhaven")
 # ── Flask App ────────────────────────────────────────────────────────────────
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = config.SECRET_KEY
+app.config["TEMPLATES_AUTO_RELOAD"] = True
 
 # Test mode: bypass Jellyfin auth for automated testing
 TEST_MODE = os.environ.get("BOOKHAVEN_TEST_MODE", "0") == "1"
