@@ -1548,6 +1548,7 @@ async function showBookDetail(bookId) {
     if (b.format === 'pdf') {
       html += '<button class="secondary" id="convert-epub-btn" onclick="convertToEpub(' + bookId + ')">Convert to EPUB</button>';
     }
+    html += '<button class="secondary" onclick="copyBookLink(' + bookId + ')" id="copy-link-btn">Share link</button>';
     html += '</div>';
     html += '</div></div>'; // meta + hero
     if (b.description) {
@@ -1566,6 +1567,17 @@ async function showBookDetail(bookId) {
 function closeDetail() {
   location.hash = '';
   showView('library-view');
+}
+
+function copyBookLink(bookId) {
+  const url = location.origin + '/#book/' + bookId;
+  navigator.clipboard.writeText(url).then(() => {
+    const btn = document.getElementById('copy-link-btn');
+    btn.textContent = 'Copied!';
+    setTimeout(() => { btn.textContent = 'Share link'; }, 2000);
+  }).catch(() => {
+    prompt('Copy this link:', location.origin + '/#book/' + bookId);
+  });
 }
 
 function editGenre(bookId, currentGenre) {
