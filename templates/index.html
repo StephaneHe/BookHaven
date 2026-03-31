@@ -1571,13 +1571,20 @@ function closeDetail() {
 
 function copyBookLink(bookId) {
   const url = location.origin + '/#book/' + bookId;
-  navigator.clipboard.writeText(url).then(() => {
-    const btn = document.getElementById('copy-link-btn');
+  const btn = document.getElementById('copy-link-btn');
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = url;
+    ta.style.cssText = 'position:fixed;opacity:0';
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    document.body.removeChild(ta);
     btn.textContent = 'Copied!';
     setTimeout(() => { btn.textContent = 'Share link'; }, 2000);
-  }).catch(() => {
-    prompt('Copy this link:', location.origin + '/#book/' + bookId);
-  });
+  } catch(e) {
+    prompt('Copy this link:', url);
+  }
 }
 
 function editGenre(bookId, currentGenre) {
