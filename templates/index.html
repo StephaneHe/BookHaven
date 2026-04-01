@@ -1794,15 +1794,29 @@ async function openEpub(bookId) {
 
     book.on('openFailed', (err) => console.error('EPUB openFailed:', err));
 
+    // Detect fixed-layout EPUBs
+    await book.opened;
+    const isFixedLayout = book.packaging &&
+      book.packaging.metadata &&
+      (book.packaging.metadata.layout === 'pre-paginated' ||
+       book.packaging.metadata['rendition:layout'] === 'pre-paginated');
+
     // Clear loading message before epub.js renders its iframe
     area.innerHTML = '';
 
-    const rendition = book.renderTo(area, {
+    const renderOpts = {
       width: area.clientWidth,
       height: areaH,
       spread: 'none',
       allowScriptedContent: true,
-    });
+    };
+    if (isFixedLayout) {
+      // Fixed-layout: let epub.js scale pages to fit the container
+      area.style.overflow = 'auto';
+      renderOpts.flow = 'scrolled';
+    }
+
+    const rendition = book.renderTo(area, renderOpts);
     state.epubRendition = rendition;
 
     // Override problematic publisher CSS for readability
