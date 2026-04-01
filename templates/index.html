@@ -1564,6 +1564,10 @@ async function showBookDetail(bookId) {
     if (b.added_at) html += '<div>Added: ' + esc(b.added_at) + '</div>';
     html += '</div>';
     body.innerHTML = html;
+    // Resume conversion polling if one is running for this book
+    fetch('/api/convert/status').then(r => r.json()).then(s => {
+      if (s.running && s.book_id === bookId) pollConversion(bookId);
+    }).catch(() => {});
   } catch(e) {
     body.innerHTML = '<div class="loading">Error loading book details</div>';
   }
@@ -1654,70 +1658,68 @@ async function classifyGenre(bookId) {
 async function convertToEpub(bookId) {
   const btn = document.getElementById('convert-epub-btn');
   btn.disabled = true;
-  // Insert progress bar after the button
+  btn.textContent = 'Converting...';
+  try {
+    const r = await fetch('/api/books/' + bookId + '/convert-epub', { method: 'POST' });
+    const data = await r.json();
+    if (!r.ok) {
+      alert(data.error || 'Conversion failed');
+      btn.textContent = 'Convert to EPUB';
+      btn.disabled = false;
+      return;
+    }
+    pollConversion(bookId);
+  } catch(e) {
+    btn.textContent = 'Convert to EPUB';
+    btn.disabled = false;
+  }
+}
+
+function pollConversion(bookId) {
+  const btn = document.getElementById('convert-epub-btn');
+  if (btn) { btn.disabled = true; btn.textContent = 'Converting...'; }
+  // Create or reuse progress bar
   let bar = document.getElementById('convert-progress');
   if (!bar) {
     bar = document.createElement('div');
     bar.id = 'convert-progress';
     bar.style.cssText = 'width:100%;margin-top:12px;background:#1a1a2e;border-radius:4px;overflow:hidden;height:24px;position:relative;border:1px solid #333';
     bar.innerHTML = '<div id="convert-fill" style="height:100%;background:#7c8cf5;width:0%;transition:width 0.5s;border-radius:4px"></div>'
-      + '<span id="convert-label" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#ccc">Starting...</span>';
-    btn.parentElement.parentElement.appendChild(bar);
+      + '<span id="convert-label" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:12px;color:#ccc">Converting...</span>';
+    const actions = document.querySelector('.detail-actions');
+    if (actions) actions.parentElement.appendChild(bar);
   }
   bar.style.display = '';
-  btn.textContent = 'Converting...';
-  try {
-    const r = await fetch('/api/books/' + bookId + '/convert-epub', { method: 'POST' });
-    const data = await r.json();
-    if (!r.ok) {
-      btn.textContent = 'Error';
-      btn.style.background = '#a33';
-      bar.style.display = 'none';
-      alert(data.error || 'Conversion failed');
-      setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
-      return;
-    }
-    // Poll conversion status
-    const startTime = Date.now();
-    const poll = setInterval(async () => {
-      try {
-        const sr = await fetch('/api/convert/status');
-        const s = await sr.json();
-        if (s.running) {
-          const elapsed = Math.round((Date.now() - startTime) / 1000);
-          const min = Math.floor(elapsed / 60);
-          const sec = elapsed % 60;
-          const timer = (min > 0 ? min + 'm ' : '') + sec + 's';
-          const msg = s.message || 'Converting...';
-          const pct = (s.total_pages > 0 && s.current_page > 0) ? Math.round(s.current_page / s.total_pages * 100) : 0;
-          // Animate a slow pulse if no page progress yet
-          const fillPct = pct > 0 ? pct : Math.min(90, 2 + elapsed * 0.5);
-          document.getElementById('convert-fill').style.width = fillPct + '%';
-          document.getElementById('convert-label').textContent = msg + ' (' + timer + ')';
-          btn.textContent = msg + ' (' + timer + ')';
+  const startTime = Date.now();
+  const poll = setInterval(async () => {
+    try {
+      const sr = await fetch('/api/convert/status');
+      const s = await sr.json();
+      const fill = document.getElementById('convert-fill');
+      const label = document.getElementById('convert-label');
+      if (!fill || !label) { clearInterval(poll); return; }
+      if (s.running) {
+        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const min = Math.floor(elapsed / 60);
+        const sec = String(elapsed % 60).padStart(2, '0');
+        const timer = min + ':' + sec;
+        const pct = (s.total_pages > 0 && s.current_page > 0) ? Math.round(s.current_page / s.total_pages * 100) : 0;
+        fill.style.width = (pct > 0 ? pct : Math.min(90, 2 + elapsed * 0.3)) + '%';
+        label.textContent = (s.message || 'Converting...') + '  ' + timer;
+      } else {
+        clearInterval(poll);
+        if (s.epub_id) {
+          fill.style.width = '100%';
+          label.textContent = 'Done!';
+          setTimeout(() => { showBookDetail(s.epub_id); }, 1500);
         } else {
-          clearInterval(poll);
-          if (s.epub_id) {
-            document.getElementById('convert-fill').style.width = '100%';
-            document.getElementById('convert-label').textContent = 'Done!';
-            btn.textContent = 'Done!';
-            btn.style.background = '#2a6';
-            setTimeout(() => { showBookDetail(s.epub_id); }, 1500);
-          } else {
-            bar.style.display = 'none';
-            btn.textContent = 'Error';
-            btn.style.background = '#a33';
-            alert(s.error || 'Conversion failed');
-            setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
-          }
+          bar.style.display = 'none';
+          alert(s.error || 'Conversion failed');
+          if (btn) { btn.textContent = 'Convert to EPUB'; btn.disabled = false; }
         }
-      } catch(e) { clearInterval(poll); }
-    }, 2000);
-  } catch(e) {
-    btn.textContent = 'Error';
-    btn.style.background = '#a33';
-    setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
-  }
+      }
+    } catch(e) { clearInterval(poll); }
+  }, 2000);
 }
 
 
