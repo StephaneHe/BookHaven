@@ -382,23 +382,35 @@ def api_convert_epub(book_id):
             convert_state["current_page"] = 0
             convert_state["total_pages"] = total_pages
             try:
+                import re as _re
                 proc = subprocess.Popen(
                     ["ebook-convert", pdf_path, epub_path,
                      "--title", book_dict["title"],
                      "--authors", book_dict["author"] or "Unknown"],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    text=True, bufsize=1
+                    bufsize=0
                 )
-                for line in proc.stdout:
-                    line = line.strip()
-                    # Calibre outputs "Page-N" during PDF conversion
-                    if line.startswith("Page-"):
-                        try:
-                            page_num = int(line.split("-", 1)[1])
+                # Read byte-by-byte to defeat Windows pipe buffering
+                buf = b""
+                while True:
+                    chunk = proc.stdout.read(1)
+                    if not chunk:
+                        break
+                    buf += chunk
+                    if chunk in (b"\n", b"\r"):
+                        line = buf.decode("utf-8", errors="replace").strip()
+                        buf = b""
+                        if not line:
+                            continue
+                        # Calibre: "Page-N" or "N% ..."
+                        page_match = _re.match(r"Page-(\d+)", line)
+                        pct_match = _re.match(r"(\d+)%", line)
+                        if page_match:
+                            page_num = int(page_match.group(1))
                             convert_state["current_page"] = page_num
                             convert_state["message"] = f"Page {page_num}" + (f"/{total_pages}" if total_pages else "")
-                        except ValueError:
-                            pass
+                        elif pct_match:
+                            convert_state["message"] = line[:60]
                 proc.wait(timeout=600)
                 if proc.returncode != 0:
                     convert_state["error"] = "Conversion failed"
