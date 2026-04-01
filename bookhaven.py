@@ -351,7 +351,11 @@ convert_state = {"running": False, "book_id": None, "message": "", "epub_id": No
 def api_convert_epub(book_id):
     """Convert a PDF book to EPUB using Calibre (async)."""
     if convert_state["running"]:
-        return jsonify({"error": "A conversion is already in progress"}), 409
+        # Check if the process is actually still alive
+        if not any(True for _ in os.popen("tasklist /FI \"IMAGENAME eq ebook-convert.exe\" /NH").read().strip().split("\n") if "ebook-convert" in _):
+            convert_state["running"] = False  # stale state, reset
+        else:
+            return jsonify({"error": "A conversion is already in progress"}), 409
     try:
         import subprocess
         conn = database.get_db()
