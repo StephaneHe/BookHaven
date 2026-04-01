@@ -343,7 +343,7 @@ def api_book_detail(book_id):
         return jsonify({"error": str(e)}), 500
 
 
-convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None}
+convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None, "current_page": 0, "total_pages": 0}
 
 
 @app.route("/api/books/<int:book_id>/convert-epub", methods=["POST"])
@@ -372,25 +372,43 @@ def api_convert_epub(book_id):
 
         book_dict = dict(book)
 
+        # Get total page count from DB
+        total_pages = conn.execute("SELECT page_count FROM books WHERE id = ?", (book_id,)).fetchone()["page_count"] or 0
+        conn.close()
+
         def run_convert():
             convert_state["running"] = True
             convert_state["book_id"] = book_id
-            convert_state["message"] = "Converting..."
+            convert_state["message"] = "Starting conversion..."
             convert_state["epub_id"] = None
             convert_state["error"] = None
+            convert_state["current_page"] = 0
+            convert_state["total_pages"] = total_pages
             try:
-                result = subprocess.run(
+                proc = subprocess.Popen(
                     ["ebook-convert", pdf_path, epub_path,
                      "--title", book_dict["title"],
                      "--authors", book_dict["author"] or "Unknown"],
-                    capture_output=True, text=True, timeout=600
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                    text=True, bufsize=1
                 )
-                if result.returncode != 0:
+                for line in proc.stdout:
+                    line = line.strip()
+                    # Calibre outputs "Page-N" during PDF conversion
+                    if line.startswith("Page-"):
+                        try:
+                            page_num = int(line.split("-", 1)[1])
+                            convert_state["current_page"] = page_num
+                            convert_state["message"] = f"Page {page_num}" + (f"/{total_pages}" if total_pages else "")
+                        except ValueError:
+                            pass
+                proc.wait(timeout=600)
+                if proc.returncode != 0:
                     convert_state["error"] = "Conversion failed"
                     convert_state["message"] = "Failed"
-                    logger.error(f"Calibre conversion failed: {result.stderr}")
                     return
 
+                convert_state["message"] = "Finalizing..."
                 file_size = os.path.getsize(epub_path)
                 epub_filename = os.path.basename(epub_path)
                 c = database.get_db()
@@ -407,6 +425,7 @@ def api_convert_epub(book_id):
                 convert_state["epub_id"] = new_id
                 convert_state["message"] = "Done"
             except subprocess.TimeoutExpired:
+                proc.kill()
                 convert_state["error"] = "Conversion timed out (max 10 min)"
                 convert_state["message"] = "Timed out"
             except Exception as e:
