@@ -1678,15 +1678,23 @@ async function convertToEpub(bookId) {
       return;
     }
     // Poll conversion status
+    const startTime = Date.now();
     const poll = setInterval(async () => {
       try {
         const sr = await fetch('/api/convert/status');
         const s = await sr.json();
         if (s.running) {
-          const pct = (s.total_pages > 0) ? Math.round(s.current_page / s.total_pages * 100) : 0;
-          document.getElementById('convert-fill').style.width = (pct || 2) + '%';
-          document.getElementById('convert-label').textContent = s.message || 'Converting...';
-          btn.textContent = s.message || 'Converting...';
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          const min = Math.floor(elapsed / 60);
+          const sec = elapsed % 60;
+          const timer = (min > 0 ? min + 'm ' : '') + sec + 's';
+          const msg = s.message || 'Converting...';
+          const pct = (s.total_pages > 0 && s.current_page > 0) ? Math.round(s.current_page / s.total_pages * 100) : 0;
+          // Animate a slow pulse if no page progress yet
+          const fillPct = pct > 0 ? pct : Math.min(90, 2 + elapsed * 0.5);
+          document.getElementById('convert-fill').style.width = fillPct + '%';
+          document.getElementById('convert-label').textContent = msg + ' (' + timer + ')';
+          btn.textContent = msg + ' (' + timer + ')';
         } else {
           clearInterval(poll);
           if (s.epub_id) {
