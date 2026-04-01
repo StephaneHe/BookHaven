@@ -1690,7 +1690,6 @@ function pollConversion(bookId) {
     if (actions) actions.parentElement.appendChild(bar);
   }
   bar.style.display = '';
-  const startTime = Date.now();
   const poll = setInterval(async () => {
     try {
       const sr = await fetch('/api/convert/status');
@@ -1699,7 +1698,7 @@ function pollConversion(bookId) {
       const label = document.getElementById('convert-label');
       if (!fill || !label) { clearInterval(poll); return; }
       if (s.running) {
-        const elapsed = Math.round((Date.now() - startTime) / 1000);
+        const elapsed = s.started_at ? Math.round(Date.now() / 1000 - s.started_at) : 0;
         const min = Math.floor(elapsed / 60);
         const sec = String(elapsed % 60).padStart(2, '0');
         const timer = min + ':' + sec;

@@ -343,7 +343,7 @@ def api_book_detail(book_id):
         return jsonify({"error": str(e)}), 500
 
 
-convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None, "current_page": 0, "total_pages": 0}
+convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None, "current_page": 0, "total_pages": 0, "started_at": 0}
 
 
 @app.route("/api/books/<int:book_id>/convert-epub", methods=["POST"])
@@ -378,13 +378,15 @@ def api_convert_epub(book_id):
         conn.close()
 
         def run_convert():
+            import time as _time
             convert_state["running"] = True
             convert_state["book_id"] = book_id
-            convert_state["message"] = "Starting conversion..."
+            convert_state["message"] = "Converting..."
             convert_state["epub_id"] = None
             convert_state["error"] = None
             convert_state["current_page"] = 0
             convert_state["total_pages"] = total_pages
+            convert_state["started_at"] = _time.time()
             try:
                 import re as _re
                 proc = subprocess.Popen(
@@ -414,7 +416,9 @@ def api_convert_epub(book_id):
                             convert_state["current_page"] = page_num
                             convert_state["message"] = f"Page {page_num}" + (f"/{total_pages}" if total_pages else "")
                         elif pct_match:
-                            convert_state["message"] = line[:60]
+                            pct_val = int(pct_match.group(1))
+                            if pct_val > 1:
+                                convert_state["message"] = f"{pct_val}% processing..."
                 proc.wait(timeout=600)
                 if proc.returncode != 0:
                     convert_state["error"] = "Conversion failed"

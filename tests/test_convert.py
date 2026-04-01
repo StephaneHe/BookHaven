@@ -12,6 +12,7 @@ def test_convert_state_init():
     assert "running" in convert_state
     assert "current_page" in convert_state
     assert "total_pages" in convert_state
+    assert "started_at" in convert_state
     assert "epub_id" in convert_state
     assert "message" in convert_state
     assert "error" in convert_state
