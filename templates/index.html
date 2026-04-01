@@ -755,8 +755,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .continue-card { width: 110px; min-width: 110px; }
   .continue-card img { width: 110px; height: 157px; }
   .continue-card .mini-title { font-size: 11px; }
-  .continue-card .info-btn { opacity: 1 !important; width: 28px; height: 28px; font-size: 14px; }
-  .remove-reading { width: 28px; height: 28px; font-size: 14px; min-width: 28px; min-height: 28px; }
+  .remove-reading { opacity: 1 !important; width: 28px; height: 28px; font-size: 14px; min-width: 28px; min-height: 28px; }
 
   /* ── T06: Breadcrumb ─────────────────────────────────── */
   .back-bar { padding: 8px 12px; }
@@ -1549,6 +1548,9 @@ async function showBookDetail(bookId) {
       html += '<button class="secondary" id="convert-epub-btn" onclick="convertToEpub(' + bookId + ')">Convert to EPUB</button>';
     }
     html += '<button class="secondary" onclick="copyBookLink(' + bookId + ')" id="copy-link-btn">Share link</button>';
+    if (b.progress) {
+      html += '<button class="secondary" style="color:#f66;border-color:#f664" onclick="removeFromReadingDetail(' + bookId + ')" id="remove-reading-btn">Remove from reading list</button>';
+    }
     html += '</div>';
     html += '</div></div>'; // meta + hero
     if (b.description) {
@@ -1673,6 +1675,17 @@ async function convertToEpub(bookId) {
 async function removeFromReading(bookId) {
   try {
     await fetch(`/api/books/${bookId}/progress`, { method: 'DELETE' });
+    loadContinueReading();
+  } catch(e) {}
+}
+
+async function removeFromReadingDetail(bookId) {
+  const btn = document.getElementById('remove-reading-btn');
+  try {
+    await fetch(`/api/books/${bookId}/progress`, { method: 'DELETE' });
+    btn.textContent = 'Removed';
+    btn.disabled = true;
+    btn.style.opacity = '0.5';
     loadContinueReading();
   } catch(e) {}
 }
