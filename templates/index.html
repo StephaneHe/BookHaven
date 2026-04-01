@@ -1810,21 +1810,32 @@ async function openEpub(bookId) {
       spread: 'none',
       allowScriptedContent: true,
     };
-    if (isFixedLayout) {
-      // Fixed-layout: let epub.js scale pages to fit the container
-      area.style.overflow = 'auto';
-      renderOpts.flow = 'scrolled';
-    }
+
+    state._isFixedLayout = isFixedLayout;
 
     const rendition = book.renderTo(area, renderOpts);
     state.epubRendition = rendition;
 
-    // Override problematic publisher CSS for readability
-    rendition.themes.default({
-      'body': { 'max-width': '100% !important', 'margin': '0 !important', 'padding': '8px !important' },
-      'img': { 'max-width': '100% !important', 'height': 'auto !important' },
-      'p, div, span': { 'font-size': 'inherit !important' },
-    });
+    if (isFixedLayout) {
+      // Fixed-layout: scale each page to fit container width via CSS transform
+      rendition.hooks.content.register((contents) => {
+        const doc = contents.document;
+        const body = doc.body || doc.documentElement;
+        const origW = parseFloat(doc.querySelector('meta[name="viewport"]')?.getAttribute('content')?.match(/width=(\d+)/)?.[1]) || body.scrollWidth || 1371;
+        const scale = area.clientWidth / origW;
+        body.style.transformOrigin = 'top left';
+        body.style.transform = 'scale(' + scale + ')';
+        body.style.width = origW + 'px';
+        body.style.overflow = 'hidden';
+      });
+    } else {
+      // Reflowable: override problematic publisher CSS for readability
+      rendition.themes.default({
+        'body': { 'max-width': '100% !important', 'margin': '0 !important', 'padding': '8px !important' },
+        'img': { 'max-width': '100% !important', 'height': 'auto !important' },
+        'p, div, span': { 'font-size': 'inherit !important' },
+      });
+    }
 
     // Restore progress
     const prog = state.currentBook.progress;
