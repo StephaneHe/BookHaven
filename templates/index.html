@@ -1658,16 +1658,35 @@ async function convertToEpub(bookId) {
   try {
     const r = await fetch('/api/books/' + bookId + '/convert-epub', { method: 'POST' });
     const data = await r.json();
-    if (r.ok) {
-      btn.textContent = 'Done!';
-      btn.style.background = '#2a6';
-      setTimeout(() => { showBookDetail(data.epub_id); }, 1000);
-    } else {
+    if (!r.ok) {
       btn.textContent = 'Error';
       btn.style.background = '#a33';
       alert(data.error || 'Conversion failed');
       setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
+      return;
     }
+    // Poll conversion status
+    const poll = setInterval(async () => {
+      try {
+        const sr = await fetch('/api/convert/status');
+        const s = await sr.json();
+        if (s.running) {
+          btn.textContent = 'Converting...';
+        } else {
+          clearInterval(poll);
+          if (s.epub_id) {
+            btn.textContent = 'Done!';
+            btn.style.background = '#2a6';
+            setTimeout(() => { showBookDetail(s.epub_id); }, 1000);
+          } else {
+            btn.textContent = 'Error';
+            btn.style.background = '#a33';
+            alert(s.error || 'Conversion failed');
+            setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
+          }
+        }
+      } catch(e) { clearInterval(poll); }
+    }, 2000);
   } catch(e) {
     btn.textContent = 'Error';
     btn.style.background = '#a33';

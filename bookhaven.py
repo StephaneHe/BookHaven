@@ -343,10 +343,15 @@ def api_book_detail(book_id):
         return jsonify({"error": str(e)}), 500
 
 
+convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None}
+
+
 @app.route("/api/books/<int:book_id>/convert-epub", methods=["POST"])
 @login_required
 def api_convert_epub(book_id):
-    """Convert a PDF book to EPUB using Calibre."""
+    """Convert a PDF book to EPUB using Calibre (async)."""
+    if convert_state["running"]:
+        return jsonify({"error": "A conversion is already in progress"}), 409
     try:
         import subprocess
         conn = database.get_db()
@@ -360,44 +365,68 @@ def api_convert_epub(book_id):
 
         pdf_path = book["path"]
         epub_path = os.path.splitext(pdf_path)[0] + ".epub"
-
-        # Check if EPUB already exists
         if os.path.exists(epub_path):
             conn.close()
             return jsonify({"error": "EPUB version already exists"}), 409
-
-        # Run calibre conversion
-        result = subprocess.run(
-            ["ebook-convert", pdf_path, epub_path,
-             "--title", book["title"],
-             "--authors", book["author"] or "Unknown"],
-            capture_output=True, text=True, timeout=300
-        )
-        if result.returncode != 0:
-            logger.error(f"Calibre conversion failed: {result.stderr}")
-            conn.close()
-            return jsonify({"error": "Conversion failed: " + result.stderr[:200]}), 500
-
-        # Add the new EPUB to the database
-        file_size = os.path.getsize(epub_path)
-        epub_filename = os.path.basename(epub_path)
-        conn.execute("""
-            INSERT INTO books (path, filename, title, author, genre, series, series_index,
-            category, format, file_size, has_cover, page_count, description)
-            SELECT ?, ?, title, author, genre, series, series_index,
-            category, 'epub', ?, has_cover, 0, description
-            FROM books WHERE id = ?
-        """, (epub_path, epub_filename, file_size, book_id))
-        conn.commit()
-        new_id = conn.execute("SELECT id FROM books WHERE path = ?", (epub_path,)).fetchone()["id"]
         conn.close()
 
-        return jsonify({"ok": True, "epub_id": new_id, "message": "Conversion successful"})
-    except subprocess.TimeoutExpired:
-        return jsonify({"error": "Conversion timed out (max 5 min)"}), 504
+        book_dict = dict(book)
+
+        def run_convert():
+            convert_state["running"] = True
+            convert_state["book_id"] = book_id
+            convert_state["message"] = "Converting..."
+            convert_state["epub_id"] = None
+            convert_state["error"] = None
+            try:
+                result = subprocess.run(
+                    ["ebook-convert", pdf_path, epub_path,
+                     "--title", book_dict["title"],
+                     "--authors", book_dict["author"] or "Unknown"],
+                    capture_output=True, text=True, timeout=600
+                )
+                if result.returncode != 0:
+                    convert_state["error"] = "Conversion failed"
+                    convert_state["message"] = "Failed"
+                    logger.error(f"Calibre conversion failed: {result.stderr}")
+                    return
+
+                file_size = os.path.getsize(epub_path)
+                epub_filename = os.path.basename(epub_path)
+                c = database.get_db()
+                c.execute("""
+                    INSERT INTO books (path, filename, title, author, genre, series, series_index,
+                    category, format, file_size, has_cover, page_count, description)
+                    SELECT ?, ?, title, author, genre, series, series_index,
+                    category, 'epub', ?, has_cover, 0, description
+                    FROM books WHERE id = ?
+                """, (epub_path, epub_filename, file_size, book_id))
+                c.commit()
+                new_id = c.execute("SELECT id FROM books WHERE path = ?", (epub_path,)).fetchone()["id"]
+                c.close()
+                convert_state["epub_id"] = new_id
+                convert_state["message"] = "Done"
+            except subprocess.TimeoutExpired:
+                convert_state["error"] = "Conversion timed out (max 10 min)"
+                convert_state["message"] = "Timed out"
+            except Exception as e:
+                convert_state["error"] = str(e)
+                convert_state["message"] = "Failed"
+                logger.error(f"Convert error: {e}\n{traceback.format_exc()}")
+            finally:
+                convert_state["running"] = False
+
+        threading.Thread(target=run_convert, daemon=True).start()
+        return jsonify({"ok": True, "message": "Conversion started"})
     except Exception as e:
         logger.error(f"Error in convert_epub: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/convert/status")
+@login_required
+def api_convert_status():
+    return jsonify(convert_state)
 
 
 @app.route("/api/books/<int:book_id>/optimize-epub", methods=["POST"])
