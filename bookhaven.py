@@ -403,9 +403,8 @@ def api_convert_epub(book_id):
 @app.route("/api/books/<int:book_id>/optimize-epub", methods=["POST"])
 @login_required
 def api_optimize_epub(book_id):
-    """Re-process an EPUB through Calibre to fix rendering issues."""
+    """Strip heavy CSS from EPUB to fix rendering issues in epub.js."""
     try:
-        import subprocess, shutil
         conn = database.get_db()
         book = conn.execute("SELECT id, path, format FROM books WHERE id = ?", (book_id,)).fetchone()
         if not book:
@@ -418,21 +417,23 @@ def api_optimize_epub(book_id):
         orig_path = book["path"]
         tmp_path = orig_path + ".optimized.epub"
 
-        result = subprocess.run(
-            ["ebook-convert", orig_path, tmp_path,
-             "--no-default-epub-cover"],
-            capture_output=True, text=True, timeout=300
-        )
-        if result.returncode != 0:
-            logger.error(f"Calibre optimize failed: {result.stderr}")
-            conn.close()
-            return jsonify({"error": "Optimization failed: " + result.stderr[:200]}), 500
+        MINIMAL_CSS = b"""
+body { margin: 1em; font-family: serif; line-height: 1.6; color: #222; }
+img { max-width: 100%; height: auto; }
+h1, h2, h3 { margin: 1em 0 0.5em; }
+p { margin: 0.5em 0; }
+table { border-collapse: collapse; width: 100%; }
+td, th { padding: 4px 8px; border: 1px solid #ccc; }
+"""
+        with zipfile.ZipFile(orig_path, 'r') as zin:
+            with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+                for item in zin.infolist():
+                    data = zin.read(item.filename)
+                    if item.filename.endswith('.css'):
+                        data = MINIMAL_CSS
+                    zout.writestr(item, data)
 
-        # Replace original with optimized version
-        backup_path = orig_path + ".backup"
-        shutil.move(orig_path, backup_path)
-        shutil.move(tmp_path, orig_path)
-        os.remove(backup_path)
+        os.replace(tmp_path, orig_path)
 
         # Update file size in DB
         new_size = os.path.getsize(orig_path)

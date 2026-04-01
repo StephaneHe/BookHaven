@@ -1675,6 +1675,8 @@ async function convertToEpub(bookId) {
   }
 }
 
+
+
 async function optimizeEpub(bookId) {
   const btn = document.getElementById('optimize-epub-btn');
   btn.disabled = true;
@@ -1869,11 +1871,9 @@ async function openEpub(bookId) {
         body.style.overflow = 'hidden';
       });
     } else {
-      // Reflowable: override problematic publisher CSS for readability
+      // Reflowable: light CSS overrides for readability
       rendition.themes.default({
-        'body': { 'max-width': '100% !important', 'margin': '0 !important', 'padding': '8px !important' },
         'img': { 'max-width': '100% !important', 'height': 'auto !important' },
-        'p, div, span': { 'font-size': 'inherit !important' },
       });
     }
 
