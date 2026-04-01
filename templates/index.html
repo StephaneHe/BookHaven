@@ -1547,6 +1547,9 @@ async function showBookDetail(bookId) {
     if (b.format === 'pdf') {
       html += '<button class="secondary" id="convert-epub-btn" onclick="convertToEpub(' + bookId + ')">Convert to EPUB</button>';
     }
+    if (b.format === 'epub') {
+      html += '<button class="secondary" id="optimize-epub-btn" onclick="optimizeEpub(' + bookId + ')">Optimize EPUB</button>';
+    }
     html += '<button class="secondary" onclick="copyBookLink(' + bookId + ')" id="copy-link-btn">Share link</button>';
     if (b.progress) {
       html += '<button class="secondary" style="color:#f66;border-color:#f664" onclick="removeFromReadingDetail(' + bookId + ')" id="remove-reading-btn">Remove from reading list</button>';
@@ -1669,6 +1672,30 @@ async function convertToEpub(bookId) {
     btn.textContent = 'Error';
     btn.style.background = '#a33';
     setTimeout(() => { btn.textContent = 'Convert to EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
+  }
+}
+
+async function optimizeEpub(bookId) {
+  const btn = document.getElementById('optimize-epub-btn');
+  btn.disabled = true;
+  btn.textContent = 'Optimizing...';
+  try {
+    const r = await fetch('/api/books/' + bookId + '/optimize-epub', { method: 'POST' });
+    const data = await r.json();
+    if (r.ok) {
+      btn.textContent = 'Done!';
+      btn.style.background = '#2a6';
+      setTimeout(() => { showBookDetail(bookId); }, 1000);
+    } else {
+      btn.textContent = 'Error';
+      btn.style.background = '#a33';
+      alert(data.error || 'Optimization failed');
+      setTimeout(() => { btn.textContent = 'Optimize EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
+    }
+  } catch(e) {
+    btn.textContent = 'Error';
+    btn.style.background = '#a33';
+    setTimeout(() => { btn.textContent = 'Optimize EPUB'; btn.style.background = ''; btn.disabled = false; }, 3000);
   }
 }
 
@@ -1893,7 +1920,13 @@ async function openEpub(bookId) {
     window.addEventListener('resize', window._epubResizeHandler);
 
   } catch(e) {
-    area.innerHTML = `<div style="color:red;padding:20px">Error loading EPUB: ${e.message}</div>`;
+    const bid = state.currentBook?.id || '';
+    area.innerHTML = `<div style="color:#ccc;padding:20px;text-align:center">
+      <p style="color:#f66">Error loading EPUB</p>
+      <p style="font-size:13px;color:#888">${esc(e.message || 'Unknown error')}</p>
+      <p style="margin-top:16px">Try optimizing this book via Calibre:</p>
+      <button class="secondary" onclick="closeReader(); showBookDetail(${bid})" style="margin-top:8px">Back to book page</button>
+    </div>`;
     console.error('EPUB load error:', e);
   }
 }

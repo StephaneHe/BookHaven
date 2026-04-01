@@ -400,6 +400,54 @@ def api_convert_epub(book_id):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/books/<int:book_id>/optimize-epub", methods=["POST"])
+@login_required
+def api_optimize_epub(book_id):
+    """Re-process an EPUB through Calibre to fix rendering issues."""
+    try:
+        import subprocess, shutil
+        conn = database.get_db()
+        book = conn.execute("SELECT id, path, format FROM books WHERE id = ?", (book_id,)).fetchone()
+        if not book:
+            conn.close()
+            return jsonify({"error": "Book not found"}), 404
+        if book["format"] != "epub":
+            conn.close()
+            return jsonify({"error": "Only EPUB books can be optimized"}), 400
+
+        orig_path = book["path"]
+        tmp_path = orig_path + ".optimized.epub"
+
+        result = subprocess.run(
+            ["ebook-convert", orig_path, tmp_path,
+             "--no-default-epub-cover"],
+            capture_output=True, text=True, timeout=300
+        )
+        if result.returncode != 0:
+            logger.error(f"Calibre optimize failed: {result.stderr}")
+            conn.close()
+            return jsonify({"error": "Optimization failed: " + result.stderr[:200]}), 500
+
+        # Replace original with optimized version
+        backup_path = orig_path + ".backup"
+        shutil.move(orig_path, backup_path)
+        shutil.move(tmp_path, orig_path)
+        os.remove(backup_path)
+
+        # Update file size in DB
+        new_size = os.path.getsize(orig_path)
+        conn.execute("UPDATE books SET file_size = ?, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                      (new_size, book_id))
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "message": "EPUB optimized"})
+    except subprocess.TimeoutExpired:
+        return jsonify({"error": "Optimization timed out (max 5 min)"}), 504
+    except Exception as e:
+        logger.error(f"Error in optimize_epub: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/books/<int:book_id>/genre", methods=["PUT"])
 @login_required
 def api_set_genre(book_id):
