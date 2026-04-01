@@ -355,7 +355,7 @@ def api_convert_epub(book_id):
     try:
         import subprocess
         conn = database.get_db()
-        book = conn.execute("SELECT id, path, filename, title, author, genre, format FROM books WHERE id = ?", (book_id,)).fetchone()
+        book = conn.execute("SELECT id, path, filename, title, author, genre, format, page_count FROM books WHERE id = ?", (book_id,)).fetchone()
         if not book:
             conn.close()
             return jsonify({"error": "Book not found"}), 404
