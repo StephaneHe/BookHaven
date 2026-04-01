@@ -370,7 +370,7 @@ def api_convert_epub(book_id):
             return jsonify({"error": "EPUB version already exists"}), 409
 
         book_dict = dict(book)
-        total_pages = book.get("page_count") or 0
+        total_pages = book["page_count"] or 0
         conn.close()
 
         def run_convert():
