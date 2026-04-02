@@ -227,6 +227,17 @@ def _extract_epub_cover(path):
                                 return zf.read(tp)
     except Exception as e:
         logger.debug(f"EPUB cover error {path}: {e}")
+    # Fallback: first image in the EPUB
+    try:
+        with zipfile.ZipFile(path, "r") as zf:
+            for name in sorted(zf.namelist()):
+                ext = os.path.splitext(name)[1].lower()
+                if ext in IMAGE_EXTS and not name.startswith("__MACOSX") and "/." not in name:
+                    data = zf.read(name)
+                    if len(data) > 2000:  # skip tiny icons
+                        return data
+    except Exception:
+        pass
     return None
 
 
@@ -241,6 +252,8 @@ def _extract_local_cover(path, fmt):
     elif fmt == "epub":
         data = _extract_epub_cover(path)
         return data, 0
+    elif fmt == "mobi" and HAS_FITZ:
+        return _extract_pdf_cover(path)  # PyMuPDF handles MOBI too
     return None, 0
 
 
