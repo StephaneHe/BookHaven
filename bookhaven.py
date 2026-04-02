@@ -768,6 +768,9 @@ def api_comic_pages(book_id):
     if not book:
         abort(404)
 
+    if book["format"] == "mobi":
+        count = _mobi_page_count(book["path"])
+        return jsonify({"pages": list(range(count)), "total": count})
     pages = _list_comic_pages(book["path"], book["format"])
     return jsonify({"pages": pages, "total": len(pages)})
 
@@ -782,6 +785,23 @@ def api_comic_page(book_id, page_num):
 
     if not book:
         abort(404)
+
+    # MOBI: render page via PyMuPDF
+    if book["format"] == "mobi":
+        try:
+            import fitz
+            doc = fitz.open(book["path"])
+            if page_num < 0 or page_num >= doc.page_count:
+                doc.close()
+                abort(404)
+            page = doc[page_num]
+            pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
+            data = pix.tobytes("jpeg")
+            doc.close()
+            return send_file(BytesIO(data), mimetype="image/jpeg")
+        except Exception as e:
+            logger.error(f"Error serving MOBI page: {e}")
+            abort(500)
 
     pages = _list_comic_pages(book["path"], book["format"])
     if page_num < 0 or page_num >= len(pages):
@@ -804,20 +824,33 @@ def api_comic_page(book_id, page_num):
 
 
 def _open_comic_archive(path, fmt):
-    """Open a comic archive, handling CBR files that are actually ZIP."""
-    if fmt == "cbz":
-        return zipfile.ZipFile(path, "r")
-    elif fmt == "cbr":
-        # Many CBR files are actually ZIP archives
+    """Open a comic archive, handling misnamed formats (CBZ as RAR, CBR as ZIP)."""
+    if fmt in ("cbz", "cbr"):
+        # Try ZIP first, then RAR — regardless of extension
         try:
             zf = zipfile.ZipFile(path, "r")
             zf.namelist()  # Validate it's a real ZIP
             return zf
-        except zipfile.BadZipFile:
+        except (zipfile.BadZipFile, Exception):
             pass
         if HAS_RARFILE:
-            return rarfile.RarFile(path, "r")
+            try:
+                return rarfile.RarFile(path, "r")
+            except Exception:
+                pass
     return None
+
+
+def _mobi_page_count(path):
+    """Get page count of a MOBI file using PyMuPDF."""
+    try:
+        import fitz
+        doc = fitz.open(path)
+        count = doc.page_count
+        doc.close()
+        return count
+    except Exception:
+        return 0
 
 
 def _list_comic_pages(path, fmt):

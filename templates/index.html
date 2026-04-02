@@ -1821,7 +1821,7 @@ async function openBook(id) {
       openEpub(id);
     } else if (fmt === 'pdf') {
       openPdf(id);
-    } else if (fmt === 'cbr' || fmt === 'cbz') {
+    } else if (fmt === 'cbr' || fmt === 'cbz' || fmt === 'mobi') {
       openComic(id);
     } else {
       alert('Format not supported for reading: ' + fmt);

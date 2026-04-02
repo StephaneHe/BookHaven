@@ -155,7 +155,8 @@ def _extract_cbr_cover(path):
 
 
 def _extract_cbz_cover(path):
-    """Extract first image from CBZ (ZIP) archive."""
+    """Extract first image from CBZ archive (may be ZIP or RAR)."""
+    # Try ZIP first
     try:
         with zipfile.ZipFile(path, "r") as zf:
             images = sorted([
@@ -165,6 +166,19 @@ def _extract_cbz_cover(path):
             ])
             if images:
                 return zf.read(images[0]), len(images)
+    except (zipfile.BadZipFile, Exception):
+        pass
+    # Fallback: try as RAR (some CBZ are mislabeled RAR)
+    try:
+        import rarfile
+        with rarfile.RarFile(path, "r") as rf:
+            images = sorted([
+                n for n in rf.namelist()
+                if os.path.splitext(n)[1].lower() in IMAGE_EXTS
+                and not n.startswith("__MACOSX") and "/." not in n
+            ])
+            if images:
+                return rf.read(images[0]), len(images)
     except Exception as e:
         logger.debug(f"CBZ cover error {path}: {e}")
     return None, 0
