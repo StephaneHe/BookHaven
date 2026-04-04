@@ -142,17 +142,49 @@ def scan_library(progress_callback=None):
         except Exception as e:
             logger.error(f"Error scanning {full_path}: {e}")
     
-    # Remove books whose files no longer exist
+    # Detect moved or deleted books
     removed_paths = existing - found_paths
+    moved_count = 0
+    deleted_count = 0
     if removed_paths:
+        # Build lookup of newly found files by (filename, file_size) for move detection
+        new_file_index = {}
+        for full_path, fname, ext, category, root in all_files:
+            try:
+                fs = os.path.getsize(full_path)
+                key = (fname, fs)
+                if key not in new_file_index:
+                    new_file_index[key] = full_path
+            except OSError:
+                pass
+
         for rpath in removed_paths:
-            conn.execute("DELETE FROM books WHERE path = ?", (rpath,))
-        logger.info(f"Removed {len(removed_paths)} books no longer on disk")
-    
+            old_book = conn.execute(
+                "SELECT id, filename, file_size FROM books WHERE path = ?", (rpath,)
+            ).fetchone()
+            if not old_book:
+                continue
+            key = (old_book["filename"], old_book["file_size"])
+            new_path = new_file_index.get(key)
+            if new_path and new_path != rpath:
+                # Book moved — update path, delete duplicate if any
+                conn.execute("DELETE FROM books WHERE path = ? AND id != ?", (new_path, old_book["id"]))
+                conn.execute("UPDATE books SET path = ?, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                             (new_path, old_book["id"]))
+                moved_count += 1
+                logger.info(f"Book moved: {os.path.basename(rpath)} -> {new_path}")
+            else:
+                conn.execute("DELETE FROM books WHERE path = ?", (rpath,))
+                deleted_count += 1
+        if deleted_count:
+            logger.info(f"Removed {deleted_count} books no longer on disk")
+        if moved_count:
+            logger.info(f"Detected {moved_count} moved books")
+
     conn.commit()
     conn.close()
-    
-    msg = f"Scan complete: {new_count} new, {updated_count} updated, {len(removed_paths)} removed"
+
+    msg = f"Scan complete: {new_count} new, {updated_count} updated, {deleted_count} removed, {moved_count} moved"
     logger.info(msg)
     if progress_callback:
         progress_callback(total, total, msg)
@@ -166,7 +198,7 @@ def scan_library(progress_callback=None):
     except Exception as e:
         logger.error(f"Collection assignment error: {e}")
     
-    return {"new": new_count, "updated": updated_count, "removed": len(removed_paths), "total": total}
+    return {"new": new_count, "updated": updated_count, "removed": deleted_count, "moved": moved_count, "total": total}
 
 
 def _get_category(lib_path):

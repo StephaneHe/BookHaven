@@ -892,10 +892,11 @@ def api_scan():
                 if scan_state["cancel"]:
                     raise InterruptedError("Scan cancelled")
             result = scanner.scan_library(progress_callback=cb)
-            scan_state["message"] = (
-                f"Done: {result['new']} new, {result['updated']} updated, "
-                f"{result['removed']} removed"
-            )
+            parts = [f"{result['new']} new", f"{result['updated']} updated",
+                     f"{result['removed']} removed"]
+            if result.get('moved'):
+                parts.append(f"{result['moved']} moved")
+            scan_state["message"] = "Done: " + ", ".join(parts)
         except InterruptedError:
             scan_state["message"] = "Scan cancelled"
         except Exception as e:
