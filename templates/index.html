@@ -2191,8 +2191,13 @@ function closeFormatPicker() {
 // ── Scan ────────────────────────────────────────────────────
 async function triggerScan() {
   try {
-    await fetch('/api/scan', { method: 'POST' });
-    pollScan();
+    const r = await fetch('/api/scan', { method: 'POST' });
+    if (r.ok) {
+      pollScan();
+    } else if (r.status === 409) {
+      // Scan already running, just show progress
+      pollScan();
+    }
   } catch(e) {}
 }
 
@@ -2214,6 +2219,7 @@ function pollScan() {
   stopBtn.style.display = '';
   stopBtn.disabled = false;
   const interval = setInterval(async () => {
+    if (!_scanPollActive) { clearInterval(interval); return; }
     try {
       const r = await fetch('/api/scan/status');
       const s = await r.json();
@@ -2232,7 +2238,7 @@ function pollScan() {
         }, 3000);
       }
     } catch(e) { clearInterval(interval); _scanPollActive = false; }
-  }, 1000);
+  }, 3000);
 }
 
 // ── Helpers ─────────────────────────────────────────────────
