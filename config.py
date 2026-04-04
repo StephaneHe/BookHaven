@@ -12,6 +12,7 @@ LIBRARY_PATHS = [
     r"H:\Books\Comics",
     r"H:\Books\Education",
     r"H:\Books\Magazines",
+    r"H:\Books\Professionel",
 ]
 
 # Category mapping from top-level folder name
@@ -20,6 +21,7 @@ CATEGORY_MAP = {
     "Comics": "Comics",
     "Education": "Education",
     "Magazines": "Magazines",
+    "Professionel": "Professionnel",
 }
 
 # Supported file extensions
