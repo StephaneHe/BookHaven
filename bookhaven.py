@@ -1177,6 +1177,38 @@ def api_books_recent_by_category():
         return jsonify({"categories": []})
 
 
+# ── API: Category Order ──────────────────────────────────────────────────────
+
+@app.route("/api/category-order")
+@login_required
+def api_get_category_order():
+    conn = database.get_db()
+    row = conn.execute(
+        "SELECT category_order FROM user_category_order WHERE user_id = ?",
+        (session["user_id"],)
+    ).fetchone()
+    conn.close()
+    return jsonify({"order": json.loads(row["category_order"]) if row else []})
+
+
+@app.route("/api/category-order", methods=["PUT"])
+@login_required
+def api_save_category_order():
+    data = request.get_json()
+    order = data.get("order", [])
+    conn = database.get_db()
+    conn.execute("""
+        INSERT INTO user_category_order (user_id, category_order, updated_at)
+        VALUES (?, ?, CURRENT_TIMESTAMP)
+        ON CONFLICT(user_id) DO UPDATE SET
+            category_order = excluded.category_order,
+            updated_at = CURRENT_TIMESTAMP
+    """, (session["user_id"], json.dumps(order)))
+    conn.commit()
+    conn.close()
+    return jsonify({"ok": True})
+
+
 # ── API: Collections ─────────────────────────────────────────────────────────
 
 @app.route("/api/collections")

@@ -73,4 +73,12 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    conn.executescript("""
+        CREATE TABLE IF NOT EXISTS user_category_order (
+            user_id TEXT PRIMARY KEY,
+            category_order TEXT NOT NULL DEFAULT '[]',
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
     conn.close()

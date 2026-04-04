@@ -625,7 +625,11 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 
 /* ── Category Rows (Home) ──────────────────────────────────── */
 .cat-rows { margin-bottom: 8px; }
-.cat-section { margin-bottom: 28px; }
+.cat-section { margin-bottom: 28px; transition: opacity 0.2s; }
+.cat-section.dragging { opacity: 0.3; }
+.cat-section.drag-over { border-top: 3px solid #7c8cf5; margin-top: -3px; }
+.drag-handle { cursor: grab; opacity: 0.3; font-size: 16px; margin-right: 6px; user-select: none; }
+.drag-handle:hover { opacity: 1; }
 .cat-header {
   display: flex; align-items: center; gap: 10px; margin-bottom: 12px;
   padding: 0 2px;
@@ -1278,17 +1282,31 @@ const CAT_ICONS = {
 async function loadCategoryRows() {
   const container = document.getElementById('category-rows');
   try {
-    const r = await fetch('/api/books/recent-by-category?n=10');
+    const [r, orderResp] = await Promise.all([
+      fetch('/api/books/recent-by-category?n=10'),
+      fetch('/api/category-order'),
+    ]);
     const data = await r.json();
+    const { order } = await orderResp.json();
     if (!data.categories || data.categories.length === 0) {
       container.innerHTML = '';
       return;
+    }
+    // Apply saved order
+    if (order && order.length > 0) {
+      const catMap = {};
+      data.categories.forEach(c => catMap[c.category] = c);
+      const ordered = [];
+      for (const name of order) {
+        if (catMap[name]) { ordered.push(catMap[name]); delete catMap[name]; }
+      }
+      data.categories.forEach(c => { if (catMap[c.category]) ordered.push(c); });
+      data.categories = ordered;
     }
     container.innerHTML = data.categories.map(cat => {
       const icon = CAT_ICONS[cat.category] || '📁';
       const cards = cat.books.map(b => {
         const fmts = b.formats || [{id: b.id, format: b.format}];
-        const clickId = fmts[0].id;
         const badges = fmts.map(f =>
           `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${f.format.toUpperCase()}">${f.format}</span>`
         ).join('');
@@ -1300,8 +1318,9 @@ async function loadCategoryRows() {
         </div>`;
       }).join('');
       const safeCat = cat.category.replace(/'/g, "\\'");
-      return `<div class="cat-section">
+      return `<div class="cat-section" draggable="true" data-category="${esc(cat.category)}">
         <div class="cat-header">
+          <span class="drag-handle" title="Drag to reorder">☰</span>
           <span class="cat-icon">${icon}</span>
           <span class="cat-name">${esc(cat.category)}</span>
           <span class="cat-count">${cat.total} titles</span>
@@ -1310,10 +1329,89 @@ async function loadCategoryRows() {
         <div class="cat-scroll">${cards}</div>
       </div>`;
     }).join('');
+    setupCategoryDragDrop(container);
   } catch(e) {
     container.innerHTML = '';
     console.error('Error loading category rows:', e);
   }
+}
+
+function setupCategoryDragDrop(container) {
+  let draggedEl = null;
+  container.addEventListener('dragstart', (e) => {
+    const section = e.target.closest('.cat-section');
+    if (!section) return;
+    draggedEl = section;
+    section.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  container.addEventListener('dragend', (e) => {
+    if (draggedEl) draggedEl.classList.remove('dragging');
+    container.querySelectorAll('.cat-section').forEach(s => s.classList.remove('drag-over'));
+    draggedEl = null;
+  });
+  container.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    const section = e.target.closest('.cat-section');
+    if (!section || section === draggedEl) return;
+    container.querySelectorAll('.cat-section').forEach(s => s.classList.remove('drag-over'));
+    section.classList.add('drag-over');
+  });
+  container.addEventListener('dragleave', (e) => {
+    const section = e.target.closest('.cat-section');
+    if (section) section.classList.remove('drag-over');
+  });
+  container.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const target = e.target.closest('.cat-section');
+    if (!target || !draggedEl || target === draggedEl) return;
+    target.classList.remove('drag-over');
+    // Insert dragged before target
+    container.insertBefore(draggedEl, target);
+    // Save new order
+    const order = Array.from(container.querySelectorAll('.cat-section'))
+      .map(el => el.dataset.category);
+    fetch('/api/category-order', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ order }),
+    }).catch(() => {});
+  });
+  // Touch support for mobile
+  let touchDragged = null;
+  let touchClone = null;
+  container.addEventListener('touchstart', (e) => {
+    const handle = e.target.closest('.drag-handle');
+    if (!handle) return;
+    touchDragged = handle.closest('.cat-section');
+    if (!touchDragged) return;
+    touchDragged.classList.add('dragging');
+  }, {passive: true});
+  container.addEventListener('touchmove', (e) => {
+    if (!touchDragged) return;
+    e.preventDefault();
+    const touch = e.touches[0];
+    const target = document.elementFromPoint(touch.clientX, touch.clientY)?.closest('.cat-section');
+    container.querySelectorAll('.cat-section').forEach(s => s.classList.remove('drag-over'));
+    if (target && target !== touchDragged) target.classList.add('drag-over');
+  }, {passive: false});
+  container.addEventListener('touchend', (e) => {
+    if (!touchDragged) return;
+    const overEl = container.querySelector('.cat-section.drag-over');
+    if (overEl && overEl !== touchDragged) {
+      container.insertBefore(touchDragged, overEl);
+      const order = Array.from(container.querySelectorAll('.cat-section'))
+        .map(el => el.dataset.category);
+      fetch('/api/category-order', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ order }),
+      }).catch(() => {});
+    }
+    touchDragged.classList.remove('dragging');
+    container.querySelectorAll('.cat-section').forEach(s => s.classList.remove('drag-over'));
+    touchDragged = null;
+  }, {passive: true});
 }
 
 function updateCategoryRowsVisibility() {
