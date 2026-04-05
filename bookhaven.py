@@ -428,14 +428,24 @@ def api_convert_epub(book_id):
                 convert_state["message"] = "Finalizing..."
                 file_size = os.path.getsize(epub_path)
                 epub_filename = os.path.basename(epub_path)
+
+                # Extract cover for the new EPUB
+                has_cover = 0
+                try:
+                    from scanner import _extract_cover
+                    if _extract_cover(epub_path, ".epub", None):
+                        has_cover = 1
+                except Exception:
+                    pass
+
                 c = database.get_db()
                 c.execute("""
                     INSERT INTO books (path, filename, title, author, genre, series, series_index,
                     category, format, file_size, has_cover, page_count, description)
                     SELECT ?, ?, title, author, genre, series, series_index,
-                    category, 'epub', ?, has_cover, 0, description
+                    category, 'epub', ?, ?, 0, description
                     FROM books WHERE id = ?
-                """, (epub_path, epub_filename, file_size, book_id))
+                """, (epub_path, epub_filename, file_size, has_cover, book_id))
                 c.commit()
                 new_id = c.execute("SELECT id FROM books WHERE path = ?", (epub_path,)).fetchone()["id"]
                 c.close()
