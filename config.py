@@ -6,13 +6,15 @@ load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Library paths to scan (Windows paths)
+# Library paths to scan
+# In Docker, H:\Books is mounted at /books
+_BOOKS_ROOT = os.environ.get("BOOKS_ROOT", r"H:\Books")
 LIBRARY_PATHS = [
-    r"H:\Books\Books",
-    r"H:\Books\Comics",
-    r"H:\Books\Education",
-    r"H:\Books\Magazines",
-    r"H:\Books\Professionel",
+    os.path.join(_BOOKS_ROOT, "Books"),
+    os.path.join(_BOOKS_ROOT, "Comics"),
+    os.path.join(_BOOKS_ROOT, "Education"),
+    os.path.join(_BOOKS_ROOT, "Magazines"),
+    os.path.join(_BOOKS_ROOT, "Professionel"),
 ]
 
 # Category mapping from top-level folder name
@@ -48,4 +50,4 @@ SECRET_KEY = os.environ.get("BOOKHAVEN_SECRET_KEY", "bookhaven-dev-secret")
 SCAN_BATCH_SIZE = 100  # commit every N books
 
 # UnRAR tool path (needed for CBR extraction)
-UNRAR_TOOL = r"C:\Program Files\WinRAR\UnRAR.exe"
+UNRAR_TOOL = os.environ.get("UNRAR_TOOL", r"C:\Program Files\WinRAR\UnRAR.exe")

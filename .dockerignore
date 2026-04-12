@@ -1,0 +1,11 @@
+data/
+cache/
+__pycache__/
+*.log
+*.pid
+.env
+.git/
+.claude/
+server.crt
+server.key
+tests/

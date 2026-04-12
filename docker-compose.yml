@@ -1,0 +1,15 @@
+services:
+  bookhaven:
+    build: .
+    container_name: bookhaven
+    ports:
+      - "8097:8097"
+    volumes:
+      - ./data:/app/data
+      - ./cache:/app/cache
+      - H:/Books:/books:rw
+      - ./.env:/app/.env:ro
+    environment:
+      - BOOKHAVEN_PORT=8097
+      - BOOKS_ROOT=/books
+    restart: unless-stopped
