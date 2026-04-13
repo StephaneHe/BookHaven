@@ -713,11 +713,11 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .scan-btn { font-size: 0 !important; padding: 8px !important; min-width: 44px !important; }
   .scan-btn::before { content: "⟳"; font-size: 16px; }
   .upload-btn { display: none !important; }
-  .user-info { display: none !important; }
+  .user-info { font-size: 11px !important; max-width: 60px; overflow: hidden; text-overflow: ellipsis; display: inline-block !important; }
   #logout-btn {
     font-size: 0; padding: 8px; min-width: 44px; min-height: 44px;
   }
-  #logout-btn::before { content: "⏻"; font-size: 18px; }
+  #logout-btn::before { content: "↪"; font-size: 18px; }
   .search-box { flex: 1; max-width: none; }
 
   /* ── T02: Sidebar Drawer ──────────────────────────── */
@@ -1128,16 +1128,16 @@ async function showLogin() {
         <div class="name">${u.name}</div>
       </div>
     `).join('');
-    if (users.length > 0) selectUser(grid.children[0], users[0].name);
+    if (users.length > 0) selectUser(grid.children[0], users[0].name, false);
   } catch(e) {}
 }
 
 let selectedUser = '';
-function selectUser(el, name) {
+function selectUser(el, name, autoLogin) {
   selectedUser = name;
   document.querySelectorAll('.user-card').forEach(c => c.classList.remove('selected'));
   el.classList.add('selected');
-  doLogin(name);
+  if (autoLogin !== false) doLogin(name);
 }
 
 async function createUser() {
