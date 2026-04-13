@@ -167,42 +167,24 @@ def login_required(f):
 
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
-    """Authenticate via Jellyfin API."""
+    """Log in by selecting a user (no password required)."""
     data = request.get_json()
     username = data.get("username", "")
-    password = data.get("password", "")
 
-    if not HAS_REQUESTS:
-        return jsonify({"error": "requests library not installed"}), 500
+    conn = database.get_db()
+    user = conn.execute("SELECT id, name FROM users WHERE name = ?", (username,)).fetchone()
+    if not user:
+        conn.close()
+        return jsonify({"error": "User not found"}), 401
 
-    try:
-        resp = http_requests.post(
-            f"{config.JELLYFIN_URL}/Users/AuthenticateByName",
-            json={"Username": username, "Pw": password},
-            headers={
-                "Content-Type": "application/json",
-                "X-Emby-Authorization": (
-                    'MediaBrowser Client="BookHaven", Device="Web", '
-                    'DeviceId="bookhaven-web", Version="1.0"'
-                ),
-            },
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            jf_data = resp.json()
-            user = jf_data.get("User", {})
-            session["user_id"] = user.get("Id", "")
-            session["user_name"] = user.get("Name", username)
-            return jsonify({
-                "ok": True,
-                "user_id": session["user_id"],
-                "user_name": session["user_name"],
-            })
-        else:
-            return jsonify({"error": "Invalid credentials"}), 401
-    except Exception as e:
-        logger.error(f"Jellyfin auth error: {e}")
-        return jsonify({"error": str(e)}), 500
+    session["user_id"] = user["id"]
+    session["user_name"] = user["name"]
+    conn.close()
+    return jsonify({
+        "ok": True,
+        "user_id": session["user_id"],
+        "user_name": session["user_name"],
+    })
 
 
 @app.route("/api/auth/logout", methods=["POST"])
@@ -228,21 +210,32 @@ def api_me():
 
 @app.route("/api/auth/users")
 def api_users():
-    """Get Jellyfin user list using admin API key."""
-    if not HAS_REQUESTS:
-        return jsonify([])
+    """Get local user list."""
+    conn = database.get_db()
+    users = [{"id": r["id"], "name": r["name"]} for r in
+             conn.execute("SELECT id, name FROM users ORDER BY name").fetchall()]
+    conn.close()
+    return jsonify(users)
+
+
+@app.route("/api/auth/users", methods=["POST"])
+def api_create_user():
+    """Create a new user."""
+    data = request.get_json()
+    name = data.get("name", "").strip()
+    if not name:
+        return jsonify({"error": "Name is required"}), 400
+    import uuid
+    user_id = uuid.uuid4().hex
+    conn = database.get_db()
     try:
-        resp = http_requests.get(
-            f"{config.JELLYFIN_URL}/Users",
-            params={"api_key": config.JELLYFIN_API_KEY},
-            timeout=10,
-        )
-        if resp.status_code == 200:
-            users = [{"id": u["Id"], "name": u["Name"]} for u in resp.json()]
-            return jsonify(users)
-    except Exception as e:
-        logger.error(f"Error fetching users: {e}")
-    return jsonify([])
+        conn.execute("INSERT INTO users (id, name) VALUES (?, ?)", (user_id, name))
+        conn.commit()
+    except Exception:
+        conn.close()
+        return jsonify({"error": "User already exists"}), 409
+    conn.close()
+    return jsonify({"ok": True, "id": user_id, "name": name})
 
 
 # ── API: Library ─────────────────────────────────────────────────────────────

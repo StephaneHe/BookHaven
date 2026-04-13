@@ -853,12 +853,12 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     <h1>📚 BookHaven</h1>
     <p class="subtitle">Select your profile</p>
     <div id="user-grid" class="user-grid"></div>
-    <div class="field">
-      <label>Password</label>
-      <input type="password" id="login-password" placeholder="Enter password (or leave empty)">
+    <div class="field" style="margin-top:16px">
+      <label>Or create a new account</label>
+      <input type="text" id="new-user-name" placeholder="Enter your name" style="margin-bottom:8px">
+      <button class="secondary" onclick="createUser()" style="width:100%">Create account</button>
     </div>
     <div class="error" id="login-error"></div>
-    <button onclick="doLogin()">Sign In</button>
   </div>
 </div>
 
@@ -1137,17 +1137,45 @@ function selectUser(el, name) {
   selectedUser = name;
   document.querySelectorAll('.user-card').forEach(c => c.classList.remove('selected'));
   el.classList.add('selected');
+  doLogin(name);
 }
 
-async function doLogin() {
-  const pw = document.getElementById('login-password').value;
+async function createUser() {
+  const input = document.getElementById('new-user-name');
+  const name = input.value.trim();
+  if (!name) return;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  try {
+    const r = await fetch('/api/auth/users', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ name }),
+    });
+    const data = await r.json();
+    if (r.ok) {
+      input.value = '';
+      doLogin(name);
+    } else {
+      errEl.textContent = data.error || 'Failed to create user';
+      errEl.style.display = 'block';
+    }
+  } catch(e) {
+    errEl.textContent = 'Connection error';
+    errEl.style.display = 'block';
+  }
+}
+
+async function doLogin(username) {
+  const name = username || selectedUser;
+  if (!name) return;
   const errEl = document.getElementById('login-error');
   errEl.style.display = 'none';
   try {
     const r = await fetch('/api/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username: selectedUser, password: pw })
+      body: JSON.stringify({ username: name })
     });
     const data = await r.json();
     if (r.ok && data.ok) {
