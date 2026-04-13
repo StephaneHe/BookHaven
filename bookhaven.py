@@ -729,10 +729,14 @@ def api_book_cover(book_id):
         if book["has_cover"]:
             cover_path = scanner.get_cover_path(book["path"])
             if cover_path and os.path.exists(cover_path):
-                return send_file(cover_path, mimetype="image/jpeg")
+                resp = send_file(cover_path, mimetype="image/jpeg")
+                resp.headers["Cache-Control"] = "public, max-age=86400"
+                return resp
 
-        # Return inline placeholder SVG
-        return Response(NO_COVER_SVG, mimetype="image/svg+xml")
+        # Return inline placeholder SVG (short cache so it refreshes when cover is extracted)
+        resp = Response(NO_COVER_SVG, mimetype="image/svg+xml")
+        resp.headers["Cache-Control"] = "no-cache"
+        return resp
     except Exception as e:
         logger.error(f"Error serving cover for book {book_id}: {e}")
         return Response(NO_COVER_SVG, mimetype="image/svg+xml")

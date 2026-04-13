@@ -1339,7 +1339,7 @@ async function loadCategoryRows() {
           `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${f.format.toUpperCase()}">${f.format}</span>`
         ).join('');
         return `<div class="cat-card" onclick="showBookDetail(${b.id})">
-          <img src="/api/books/${b.id}/cover" loading="lazy" onerror="this.style.opacity='0.3'">
+          <img src="/api/books/${b.id}/cover?v=2" loading="lazy" onerror="this.style.opacity='0.3'">
           <div class="format-badges">${badges}</div>
           <div class="cat-card-title" title="${esc(b.title)}">${esc(b.title)}</div>
           <div class="cat-card-author">${esc(b.author)}</div>
@@ -1527,7 +1527,7 @@ async function loadBooks() {
         return `
         <div class="book-card collection-card" onclick="browseInto('${safePath}')">
           <span class="collection-badge">${item.book_count}</span>
-          <img src="/api/books/${item.cover_book_id}/cover" loading="lazy"
+          <img src="/api/books/${item.cover_book_id}/cover?v=2" loading="lazy"
                onerror="this.style.opacity='0.3'">
           <div class="title" title="${esc(item.title)}">${esc(item.title)}</div>
           <div class="author">${esc(item.author)}</div>
@@ -1539,7 +1539,7 @@ async function loadBooks() {
         ).join('');
         return `
         <div class="book-card" onclick="showBookDetail(${item.id})">
-          <img src="/api/books/${item.id}/cover" loading="lazy"
+          <img src="/api/books/${item.id}/cover?v=2" loading="lazy"
                onerror="this.style.opacity='0.3'">
           <div class="format-badges">${badges}</div>
           <div class="title" title="${esc(item.title)}">${esc(item.title)}</div>
@@ -1626,7 +1626,7 @@ async function loadContinueReading() {
     row.innerHTML = books.map(b => `
       <div class="continue-card" onclick="openBook(${b.id})">
         <button class="remove-reading" onclick="event.stopPropagation(); removeFromReading(${b.id})" title="Remove">✕</button>
-        <img src="/api/books/${b.id}/cover"
+        <img src="/api/books/${b.id}/cover?v=2"
              onerror="this.style.opacity='0.3'">
         <div class="progress-bar"><div class="fill" style="width:${b.progress}%"></div></div>
         <div class="title" title="${esc(b.title)}">${esc(b.title)}</div>
@@ -1648,7 +1648,7 @@ async function showBookDetail(bookId) {
       .map(g => '<span class="genre-tag">' + esc(g) + '</span>').join('');
     const lockIcon = b.genre_locked ? ' <span title="Manually set" style="color:#f90">&#128274;</span>' : '';
     let html = '<div class="detail-hero">';
-    html += '<img class="detail-cover" src="/api/books/' + bookId + '/cover" onerror="this.style.opacity=0.3">';
+    html += '<img class="detail-cover" src="/api/books/' + bookId + '/cover?v=2" onerror="this.style.opacity=0.3">';
     html += '<div class="detail-meta">';
     html += '<h1>' + esc(b.title) + '</h1>';
     html += '<div class="detail-meta-table">';
