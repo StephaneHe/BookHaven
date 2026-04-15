@@ -120,6 +120,90 @@ def _extract_pdf_cover(path):
         return None, 0
 
 
+def _extract_mobi_cover(path):
+    """Extract embedded cover from MOBI by parsing PalmDB records.
+
+    Returns (cover_bytes, page_count) or (None, 0) on failure.
+    The EXTH record type 201 stores the cover image offset from the first image record.
+    This gives the real publisher cover, not just the first page.
+    """
+    import struct
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+
+        # PalmDB header: numrecords at offset 76 (big-endian u16)
+        num_records = struct.unpack(">H", data[76:78])[0]
+        if num_records == 0:
+            return None, 0
+
+        record_offsets = []
+        for i in range(num_records):
+            off = struct.unpack(">I", data[78 + i * 8 : 78 + i * 8 + 4])[0]
+            record_offsets.append(off)
+
+        def get_record(i):
+            start = record_offsets[i]
+            end = record_offsets[i + 1] if i + 1 < len(record_offsets) else len(data)
+            return data[start:end]
+
+        # Parse EXTH header (inside record 0) to find cover offset
+        rec0 = get_record(0)
+        exth_pos = rec0.find(b"EXTH")
+        cover_offset = None
+        if exth_pos > 0:
+            rec_count = struct.unpack(">I", rec0[exth_pos + 8 : exth_pos + 12])[0]
+            pos = exth_pos + 12
+            for _ in range(rec_count):
+                if pos + 8 > len(rec0):
+                    break
+                rtype = struct.unpack(">I", rec0[pos : pos + 4])[0]
+                rlen = struct.unpack(">I", rec0[pos + 4 : pos + 8])[0]
+                if rtype == 201 and rlen >= 12:
+                    cover_offset = struct.unpack(">I", rec0[pos + 8 : pos + 12])[0]
+                    break
+                pos += rlen
+
+        # Find the first record that starts with an image magic
+        first_img = None
+        for i in range(num_records):
+            r = get_record(i)
+            if len(r) > 8 and (
+                r[:2] == b"\xff\xd8"
+                or r[:8] == b"\x89PNG\r\n\x1a\n"
+                or r[:4] == b"GIF8"
+            ):
+                first_img = i
+                break
+
+        cover_data = None
+        if first_img is not None and cover_offset is not None:
+            cover_idx = first_img + cover_offset
+            if 0 <= cover_idx < num_records:
+                rec = get_record(cover_idx)
+                if rec[:2] == b"\xff\xd8" or rec[:8] == b"\x89PNG\r\n\x1a\n":
+                    cover_data = rec
+
+        # Fallback: use the first image record if no EXTH cover pointer
+        if not cover_data and first_img is not None:
+            cover_data = get_record(first_img)
+
+        # Get page count via PyMuPDF (if available)
+        page_count = 0
+        if HAS_FITZ:
+            try:
+                doc = fitz.open(path)
+                page_count = doc.page_count
+                doc.close()
+            except Exception:
+                pass
+
+        return cover_data, page_count
+    except Exception as e:
+        logger.debug(f"MOBI cover error {path}: {e}")
+        return None, 0
+
+
 def _extract_cbr_cover(path):
     """Extract first image from CBR archive (may be RAR or ZIP format)."""
     # Many CBR files are actually ZIP archives
@@ -266,8 +350,14 @@ def _extract_local_cover(path, fmt):
     elif fmt == "epub":
         data = _extract_epub_cover(path)
         return data, 0
-    elif fmt == "mobi" and HAS_FITZ:
-        return _extract_pdf_cover(path)  # PyMuPDF handles MOBI too
+    elif fmt == "mobi":
+        # Try embedded cover first (real publisher cover), fall back to PyMuPDF first page
+        data, pages = _extract_mobi_cover(path)
+        if data:
+            return data, pages
+        if HAS_FITZ:
+            return _extract_pdf_cover(path)
+        return None, 0
     return None, 0
 
 

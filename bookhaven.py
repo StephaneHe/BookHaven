@@ -3,6 +3,7 @@ import os
 import re
 import sys
 import json
+import time
 import uuid
 import shutil
 import zipfile
@@ -62,6 +63,11 @@ app.config["TEMPLATES_AUTO_RELOAD"] = True
 TEST_MODE = os.environ.get("BOOKHAVEN_TEST_MODE", "0") == "1"
 if TEST_MODE:
     logger.warning("** TEST MODE ACTIVE - auth bypass enabled **")
+
+@app.route("/isAlive")
+def is_alive():
+    """Liveness probe for the dashboard service monitor."""
+    return jsonify({"ok": True, "service": "bookhaven", "ts": int(time.time())}), 200
 
 @app.route("/api/test-login", methods=["POST"])
 def test_login():
@@ -534,6 +540,47 @@ def api_set_genre(book_id):
         return jsonify({"ok": True, "genre": genre})
     except Exception as e:
         logger.error(f"Error in set_genre: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/books/<int:book_id>/series", methods=["DELETE"])
+@login_required
+def api_remove_book_series(book_id):
+    """Remove a single book from its series (book is kept, series is cleared)."""
+    try:
+        conn = database.get_db()
+        conn.execute(
+            "UPDATE books SET series = '', series_index = 0, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (book_id,)
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True})
+    except Exception as e:
+        logger.error(f"Error in remove_book_series: {e}\n{traceback.format_exc()}")
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/series", methods=["DELETE"])
+@login_required
+def api_delete_series():
+    """Delete a series: clears the series field on all its books (books are kept)."""
+    try:
+        data = request.get_json() or {}
+        series = data.get("series", "").strip()
+        if not series:
+            return jsonify({"error": "series name required"}), 400
+        conn = database.get_db()
+        result = conn.execute(
+            "UPDATE books SET series = '', series_index = 0, modified_at = CURRENT_TIMESTAMP WHERE series = ?",
+            (series,)
+        )
+        affected = result.rowcount
+        conn.commit()
+        conn.close()
+        return jsonify({"ok": True, "affected": affected})
+    except Exception as e:
+        logger.error(f"Error in delete_series: {e}\n{traceback.format_exc()}")
         return jsonify({"error": str(e)}), 500
 
 
@@ -1392,9 +1439,8 @@ def api_collection_detail(series_name):
 # ── API: Media Enrichment ────────────────────────────────────────────────────
 
 @app.route("/api/enrichment/status")
-@login_required
 def api_enrichment_status():
-    """Get media enrichment worker status."""
+    """Get media enrichment worker status. No auth required (read-only)."""
     return jsonify(media_worker.get_status())
 
 
@@ -1511,6 +1557,11 @@ def api_upload_analyze():
         # Extract metadata using scanner
         root = temp_dir  # use temp dir as root so series-from-folder won't fire
         meta = scanner._extract_metadata(temp_path, filename, ext, 'Books', root)
+        # Clear any series/collection inferred from the temp upload folder name
+        if meta.get('series') in ('uploads', os.path.basename(temp_dir)):
+            meta['series'] = ''
+            meta['series_index'] = 0
+            meta['collection_path'] = ''
 
         # Determine placement
         category, dest_folder, reason, is_new_folder = _determine_placement(meta, ext)
@@ -1560,10 +1611,11 @@ def api_upload_confirm():
     pending = _pending_uploads.pop(upload_id)
     temp_path = pending['temp_path']
 
-    # Allow user to override any metadata field
+    # Allow user to override any metadata field.
+    # An explicit empty string means "clear this field" (user cleared the input).
     meta = pending['meta'].copy()
     for field in ('title', 'author', 'series', 'series_index', 'category', 'genre'):
-        if field in data and data[field] != '':
+        if field in data:
             meta[field] = data[field]
 
     dest_folder = data.get('dest_folder') or pending['dest_folder']

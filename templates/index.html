@@ -1638,6 +1638,7 @@ async function loadContinueReading() {
 async function showBookDetail(bookId) {
   showView('detail-view');
   location.hash = '#book/' + bookId;
+  state.detailBookId = bookId;
   const body = document.getElementById('detail-body');
   body.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
   try {
@@ -1657,7 +1658,11 @@ async function showBookDetail(bookId) {
     if (b.series) {
       const sl = b.series + (b.series_index ? ' #' + b.series_index : '');
       const ss = b.series.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-      html += '<span class="detail-meta-label">Series</span><span class="detail-meta-value"><a href="#" class="series-link" onclick="closeDetail();browseInto(\'' + ss + '\');return false;">' + esc(sl) + '</a></span>';
+      html += '<span class="detail-meta-label">Series</span><span class="detail-meta-value">'
+        + '<a href="#" class="series-link" onclick="closeDetail();browseInto(\'' + ss + '\');return false;">' + esc(sl) + '</a>'
+        + ' <button class="ai-genre-btn" onclick="removeFromSeries(' + bookId + ')" title="Remove this book from the series">&times;</button>'
+        + ' <button class="ai-genre-btn" onclick="deleteSeries(\'' + ss + '\')" title="Delete the whole series (keeps books)">Delete series</button>'
+        + '</span>';
     }
     row('Category', b.category);
     html += '<span class="detail-meta-label">Genre</span><span class="detail-meta-value">'
@@ -1754,6 +1759,33 @@ function editGenre(bookId, currentGenre) {
 
   input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.stopPropagation(); save(); } if (e.key === 'Escape') { e.stopPropagation(); showBookDetail(bookId); } });
   input.addEventListener('blur', save);
+}
+
+async function removeFromSeries(bookId) {
+  if (!confirm('Remove this book from its series?')) return;
+  try {
+    const r = await fetch('/api/books/' + bookId + '/series', { method: 'DELETE' });
+    if (r.ok) showBookDetail(bookId);
+    else alert('Failed to remove from series');
+  } catch(e) { alert('Error: ' + e.message); }
+}
+
+async function deleteSeries(seriesName) {
+  if (!confirm('Delete the series "' + seriesName + '"?\nAll books will be kept but removed from the series.')) return;
+  try {
+    const r = await fetch('/api/series', {
+      method: 'DELETE',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ series: seriesName }),
+    });
+    const data = await r.json();
+    if (r.ok) {
+      alert(data.affected + ' books removed from series');
+      if (state.detailBookId) showBookDetail(state.detailBookId);
+    } else {
+      alert(data.error || 'Failed to delete series');
+    }
+  } catch(e) { alert('Error: ' + e.message); }
 }
 
 async function classifyGenre(bookId) {
@@ -2635,6 +2667,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (enrichDone) return;
     try {
       const r = await fetch('/api/enrichment/status');
+      if (r.status === 401) {
+        // Not logged in - retry later
+        setTimeout(pollEnrichment, 5000);
+        return;
+      }
       const s = await r.json();
       const bar = document.getElementById('enrichment-bar');
       if (s.running) {

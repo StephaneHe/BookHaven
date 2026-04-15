@@ -5,7 +5,7 @@ services:
     ports:
       - "8097:8097"
     volumes:
-      - ./data:/app/data
+      - bookhaven_data:/app/data
       - ./cache:/app/cache
       - H:/Books:/books:rw
       - ./.env:/app/.env:ro
@@ -21,3 +21,6 @@ services:
       - BOOKHAVEN_PORT=8097
       - BOOKS_ROOT=/books
     restart: unless-stopped
+
+volumes:
+  bookhaven_data:
