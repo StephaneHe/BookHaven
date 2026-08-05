@@ -1277,9 +1277,9 @@ async function showLogin() {
     const users = await r.json();
     const grid = document.getElementById('user-grid');
     grid.innerHTML = users.map(u => `
-      <div class="user-card" data-name="${u.name}" onclick="selectUser(this, '${u.name}')">
-        <div class="user-avatar">${u.name[0].toUpperCase()}</div>
-        <div class="name">${u.name}</div>
+      <div class="user-card" data-name="${esc(u.name)}" onclick="selectUser(this, ${JSON.stringify(u.name)})">
+        <div class="user-avatar">${esc(u.name[0].toUpperCase())}</div>
+        <div class="name">${esc(u.name)}</div>
       </div>
     `).join('');
     if (users.length > 0) selectUser(grid.children[0], users[0].name, false);
@@ -2232,7 +2232,7 @@ async function openEpub(bookId) {
       width: area.clientWidth,
       height: areaH,
       spread: 'none',
-      allowScriptedContent: true,
+      allowScriptedContent: false,
     };
 
     state._isFixedLayout = isFixedLayout;
@@ -2585,7 +2585,7 @@ async function openPdf(bookId) {
     saveCurrentProgress();
 
   } catch(e) {
-    container.innerHTML = `<div style="color:red;padding:20px">Error loading PDF: ${e.message}</div>`;
+    container.innerHTML = `<div style="color:red;padding:20px">Error loading PDF: ${esc(e.message)}</div>`;
   }
 }
 
@@ -2610,7 +2610,7 @@ async function openComic(bookId) {
     // Save immediately so book appears in Continue Reading
     saveCurrentProgress();
   } catch(e) {
-    container.innerHTML = `<div style="color:red;padding:20px">Error: ${e.message}</div>`;
+    container.innerHTML = `<div style="color:red;padding:20px">Error: ${esc(e.message)}</div>`;
   }
 }
 

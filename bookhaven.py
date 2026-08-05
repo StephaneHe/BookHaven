@@ -1890,7 +1890,10 @@ def api_upload_analyze():
     if not f.filename:
         return jsonify({"error": "No filename"}), 400
 
-    filename = f.filename
+    from werkzeug.utils import secure_filename
+    filename = secure_filename(f.filename)
+    if not filename:
+        return jsonify({"error": "Invalid filename"}), 400
     ext = os.path.splitext(filename)[1].lower()
     if ext not in config.SUPPORTED_FORMATS:
         return jsonify({"error": f"Unsupported format '{ext}'. Allowed: {', '.join(sorted(config.SUPPORTED_FORMATS))}"}), 400
@@ -1970,6 +1973,14 @@ def api_upload_confirm():
     dest_folder = data.get('dest_folder') or pending['dest_folder']
     filename = pending['filename']
     ext = pending['ext']
+
+    abs_dest = os.path.normpath(os.path.abspath(dest_folder))
+    allowed = any(
+        abs_dest.startswith(os.path.normpath(os.path.abspath(p)))
+        for p in config.LIBRARY_PATHS
+    )
+    if not allowed:
+        return jsonify({"error": "Invalid destination folder"}), 400
 
     try:
         os.makedirs(dest_folder, exist_ok=True)

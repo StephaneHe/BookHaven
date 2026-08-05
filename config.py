@@ -40,7 +40,12 @@ HOST = "0.0.0.0"
 PORT = int(os.environ.get("BOOKHAVEN_PORT", 8097))
 
 # Session secret
-SECRET_KEY = os.environ.get("BOOKHAVEN_SECRET_KEY", "bookhaven-dev-secret")
+SECRET_KEY = os.environ.get("BOOKHAVEN_SECRET_KEY", "")
+if not SECRET_KEY or SECRET_KEY == "bookhaven-dev-secret":
+    raise RuntimeError(
+        "BOOKHAVEN_SECRET_KEY must be set to a strong random value. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+    )
 
 # Scanner settings
 SCAN_BATCH_SIZE = 100  # commit every N books
