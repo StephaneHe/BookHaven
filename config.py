@@ -6,15 +6,15 @@ load_dotenv()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
-# Library paths to scan
-# In Docker, H:\Books is mounted at /books
-_BOOKS_ROOT = os.environ.get("BOOKS_ROOT", r"H:\Books")
+# Library root — set BOOKS_ROOT env var to override (e.g. D:\MyBooks)
+BOOKS_ROOT = os.environ.get("BOOKS_ROOT", r"H:\Books")
+
 LIBRARY_PATHS = [
-    os.path.join(_BOOKS_ROOT, "Books"),
-    os.path.join(_BOOKS_ROOT, "Comics"),
-    os.path.join(_BOOKS_ROOT, "Education"),
-    os.path.join(_BOOKS_ROOT, "Magazines"),
-    os.path.join(_BOOKS_ROOT, "Professionel"),
+    os.path.join(BOOKS_ROOT, "Books"),
+    os.path.join(BOOKS_ROOT, "Comics"),
+    os.path.join(BOOKS_ROOT, "Education"),
+    os.path.join(BOOKS_ROOT, "Magazines"),
+    os.path.join(BOOKS_ROOT, "Professionel"),
 ]
 
 # Category mapping from top-level folder name
@@ -39,10 +39,6 @@ COVER_CACHE_DIR = os.path.join(BASE_DIR, "cache", "covers")
 HOST = "0.0.0.0"
 PORT = int(os.environ.get("BOOKHAVEN_PORT", 8097))
 
-# Jellyfin API for authentication
-JELLYFIN_URL = os.environ.get("JELLYFIN_URL", "http://localhost:8096")
-JELLYFIN_API_KEY = os.environ.get("JELLYFIN_API_KEY", "")
-
 # Session secret
 SECRET_KEY = os.environ.get("BOOKHAVEN_SECRET_KEY", "bookhaven-dev-secret")
 
@@ -51,3 +47,9 @@ SCAN_BATCH_SIZE = 100  # commit every N books
 
 # UnRAR tool path (needed for CBR extraction)
 UNRAR_TOOL = os.environ.get("UNRAR_TOOL", r"C:\Program Files\WinRAR\UnRAR.exe")
+
+# Calibre ebook-convert (needed for PDF→EPUB conversion)
+CALIBRE_CONVERT = os.environ.get(
+    "CALIBRE_CONVERT",
+    r"C:\Program Files (x86)\Calibre2\ebook-convert.exe",
+)

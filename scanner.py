@@ -142,6 +142,15 @@ def scan_library(progress_callback=None):
         except Exception as e:
             logger.error(f"Error scanning {full_path}: {e}")
     
+    # Safety check: if no files found at all but DB has books, library paths are
+    # likely unavailable (disconnected drive). Abort deletion to avoid wiping the catalog.
+    if not found_paths and existing:
+        logger.error(f"Scan found 0 files but DB has {len(existing)} books — aborting deletion (library paths may be offline)")
+        conn.commit()
+        conn.close()
+        return {"new": new_count, "updated": updated_count, "removed": 0, "moved": 0, "total": 0,
+                "error": "No files found — library paths may be offline. Deletion skipped."}
+
     # Detect moved or deleted books
     removed_paths = existing - found_paths
     moved_count = 0
@@ -746,10 +755,43 @@ def assign_collections(conn=None):
     return total_assigned
 
 
+def _legacy_cover_hash(book_path):
+    """Return the cover cache path under the old /books/... hash, if applicable.
+
+    Before the standalone migration, covers were cached using paths like
+    /books/Books/foo.epub. After migration the DB stores H:\\Books\\Books\\foo.epub,
+    producing a different hash. This helper lets callers locate the old file.
+    """
+    books_root = config.BOOKS_ROOT.rstrip("/\\")
+    if not books_root:
+        return None
+    norm = book_path.replace("\\", "/")
+    root_norm = books_root.replace("\\", "/")
+    if norm.startswith(root_norm + "/"):
+        suffix = norm[len(root_norm):]          # e.g. /Books/foo.epub
+        legacy = "/books" + suffix
+        legacy_hash = hashlib.md5(legacy.encode()).hexdigest()
+        return os.path.join(config.COVER_CACHE_DIR, f"{legacy_hash}.jpg")
+    return None
+
+
 def get_cover_path(book_path):
-    """Get the cached cover image path for a book."""
+    """Get the cached cover image path for a book.
+
+    Tries the current-hash filename first. If not found, falls back to the
+    legacy /books/... hash (pre-standalone migration) and renames the file
+    in place so future lookups are fast.
+    """
     path_hash = hashlib.md5(book_path.encode()).hexdigest()
     cover_path = os.path.join(config.COVER_CACHE_DIR, f"{path_hash}.jpg")
     if os.path.exists(cover_path):
         return cover_path
+    # Legacy fallback
+    legacy_path = _legacy_cover_hash(book_path)
+    if legacy_path and os.path.exists(legacy_path):
+        try:
+            os.rename(legacy_path, cover_path)
+            return cover_path
+        except OSError:
+            return legacy_path
     return None

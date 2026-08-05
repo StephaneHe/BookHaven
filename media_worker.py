@@ -72,6 +72,20 @@ def _get_conn():
     return conn
 
 
+def _legacy_cover_path(book_path):
+    """Return the legacy /books/... hash cover path, or None."""
+    books_root = config.BOOKS_ROOT.rstrip("/\\") if hasattr(config, "BOOKS_ROOT") else ""
+    if not books_root:
+        return None
+    norm = book_path.replace("\\", "/")
+    root_norm = books_root.replace("\\", "/")
+    if norm.startswith(root_norm + "/"):
+        suffix = norm[len(root_norm):]
+        legacy_hash = hashlib.md5(("/books" + suffix).encode()).hexdigest()
+        return os.path.join(config.COVER_CACHE_DIR, f"{legacy_hash}.jpg")
+    return None
+
+
 def _save_cover(full_path, cover_data):
     """Save cover image as JPEG thumbnail. Returns True on success."""
     if not cover_data or len(cover_data) < 100:
@@ -81,6 +95,14 @@ def _save_cover(full_path, cover_data):
         cover_path = os.path.join(config.COVER_CACHE_DIR, f"{path_hash}.jpg")
         if os.path.exists(cover_path):
             return True
+        # If the legacy hash file exists, rename it instead of re-extracting
+        legacy = _legacy_cover_path(full_path)
+        if legacy and os.path.exists(legacy):
+            try:
+                os.rename(legacy, cover_path)
+                return True
+            except OSError:
+                pass
         os.makedirs(config.COVER_CACHE_DIR, exist_ok=True)
         if HAS_PIL:
             img = Image.open(BytesIO(cover_data))

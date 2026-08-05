@@ -5,7 +5,7 @@
 #>
 $Port = 8097
 $PythonExe = "C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe"
-$AppDir = "H:\BookHaven"
+$AppDir = "C:\Dev\BookHaven"
 $LogFile = Join-Path $AppDir "watchdog.log"
 
 $conn = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue

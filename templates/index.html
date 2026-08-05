@@ -492,6 +492,19 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   overflow: hidden; text-overflow: ellipsis;
 }
 .reader-topbar .progress-text { font-size: 12px; color: #888; }
+.font-controls { display: none; align-items: center; gap: 4px; }
+.font-controls button {
+  background: #222; color: #bbb; border: 1px solid #333;
+  border-radius: 5px; padding: 2px 9px; font-size: 12px;
+  cursor: pointer; line-height: 1.6;
+}
+.font-controls button:hover { background: #333; color: #fff; }
+.theme-controls { display: none; align-items: center; gap: 5px; }
+.theme-dot {
+  width: 15px; height: 15px; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,0.2); cursor: pointer; flex-shrink: 0;
+}
+.theme-dot.active { border-color: #5b9de0; }
 
 /* EPUB Reader */
 #epub-container {
@@ -510,6 +523,55 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 .epub-nav:hover { background: #000c; }
 .epub-nav.prev { left: 8px; }
 .epub-nav.next { right: 8px; }
+
+/* EPUB nav bar */
+#epub-nav-bar {
+  display: none; position: fixed; bottom: 0; left: 0; right: 0;
+  height: 44px; background: rgba(16,16,24,0.88);
+  backdrop-filter: blur(6px);
+  align-items: center; padding: 0 16px; gap: 10px; z-index: 160;
+}
+#epub-nav-bar.visible { display: flex; }
+#epub-seek-loader {
+  width: 18px; height: 18px; flex-shrink: 0;
+  border: 2px solid rgba(255,255,255,0.15);
+  border-top-color: #7c8cf5; border-radius: 50%;
+  animation: epub-spin 0.8s linear infinite; display: none;
+}
+#epub-seek-loader.active { display: block; }
+@keyframes epub-spin { to { transform: rotate(360deg); } }
+#epub-seekbar {
+  flex: 1; height: 4px; cursor: pointer; accent-color: #7c8cf5;
+}
+#epub-seekbar:disabled { opacity: 0.35; cursor: not-allowed; }
+#epub-page-pill {
+  font-size: 12px; color: #ccc; white-space: nowrap;
+  min-width: 72px; text-align: center; cursor: pointer;
+  padding: 3px 9px; border-radius: 10px;
+  background: rgba(255,255,255,0.08);
+}
+#epub-page-pill:hover { background: rgba(255,255,255,0.16); }
+#epub-jump-overlay {
+  display: none; position: fixed; inset: 0; z-index: 300;
+  background: #000a; align-items: center; justify-content: center;
+}
+#epub-jump-overlay.active { display: flex; }
+#epub-jump-box {
+  background: #1a1a2e; border-radius: 12px;
+  padding: 22px 28px; text-align: center; min-width: 220px;
+  box-shadow: 0 8px 32px #000a;
+}
+#epub-jump-box label {
+  display: block; color: #999; font-size: 13px; margin-bottom: 10px;
+}
+#epub-jump-input {
+  width: 90px; text-align: center; font-size: 20px;
+  background: #0f0f1a; border: 1px solid #555;
+  color: #fff; border-radius: 6px; padding: 6px 10px;
+}
+#epub-jump-box .jump-btns {
+  display: flex; gap: 8px; margin-top: 14px; justify-content: center;
+}
 
 /* PDF Reader */
 #pdf-container {
@@ -1046,6 +1108,15 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   <div class="reader-topbar">
     <button class="back-btn" onclick="closeReader()">←</button>
     <span class="book-title" id="reader-title"></span>
+    <div class="font-controls" id="font-controls">
+      <button onclick="epubFontDec()" title="Diminuer la police">A−</button>
+      <button onclick="epubFontInc()" title="Augmenter la police">A+</button>
+    </div>
+    <div class="theme-controls" id="theme-controls">
+      <div class="theme-dot" data-theme="light" onclick="epubSetTheme('light')" title="Clair" style="background:#fff;"></div>
+      <div class="theme-dot" data-theme="sepia" onclick="epubSetTheme('sepia')" title="Sépia" style="background:#f6f1e7;border-color:#b8a88a;"></div>
+      <div class="theme-dot" data-theme="dark" onclick="epubSetTheme('dark')" title="Sombre" style="background:#1e1e1e;"></div>
+    </div>
     <span class="progress-text" id="reader-progress"></span>
   </div>
   <!-- EPUB -->
@@ -1053,6 +1124,21 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     <button class="epub-nav prev" onclick="epubPrev()">‹</button>
     <div id="epub-area"></div>
     <button class="epub-nav next" onclick="epubNext()">›</button>
+  </div>
+  <div id="epub-nav-bar">
+    <div id="epub-seek-loader"></div>
+    <input type="range" id="epub-seekbar" min="0" max="1000" value="0" disabled>
+    <span id="epub-page-pill" onclick="epubShowJump()">— / —</span>
+  </div>
+  <div id="epub-jump-overlay" onclick="if(event.target===this)epubHideJump()">
+    <div id="epub-jump-box">
+      <label id="epub-jump-label">Aller à la position</label>
+      <input type="number" id="epub-jump-input" min="1" inputmode="numeric">
+      <div class="jump-btns">
+        <button onclick="epubDoJump()">Aller</button>
+        <button class="secondary" onclick="epubHideJump()">Annuler</button>
+      </div>
+    </div>
   </div>
   <!-- PDF -->
   <div id="pdf-container" style="display:none"></div>
@@ -1090,6 +1176,74 @@ const state = {
   pdfCurrentPage: 0,
   saveProgressTimer: null,
 };
+
+// ── EPUB Prefetch Cache ──────────────────────────────────────
+// In-memory store: server URL → blob: URL for EPUB image resources.
+// Cleared explicitly on book close / last-page reached so blob URLs are revoked.
+const _epubPrefetch = {
+    imgs: new Map(),     // "/api/books/…/epub-resource/…" → blob: URL (null while in-flight)
+    sections: new Set(), // section hrefs for which a prefetch has been initiated
+    bookId: null,
+};
+
+function _epubCacheClear() {
+    _epubPrefetch.imgs.forEach(url => { if (url) URL.revokeObjectURL(url); });
+    _epubPrefetch.imgs.clear();
+    _epubPrefetch.sections.clear();
+    _epubPrefetch.bookId = null;
+}
+
+// Fetch all images referenced by one spine section and cache them as blob: URLs.
+async function _epubPrefetchSection(bookId, sectionHref) {
+    if (_epubPrefetch.bookId !== bookId || _epubPrefetch.sections.has(sectionHref)) return;
+    _epubPrefetch.sections.add(sectionHref);
+    try {
+        const resp = await fetch(`/api/books/${bookId}/epub-resource/${sectionHref}`);
+        if (!resp.ok) return;
+        const html = await resp.text();
+        const doc = new DOMParser().parseFromString(html, 'application/xhtml+xml');
+        const chapterBase = 'http://epub-internal/' + sectionHref;
+        await Promise.all([...doc.querySelectorAll('img[src]')].map(img => {
+            const rawSrc = img.getAttribute('src');
+            if (!rawSrc) return;
+            let zipPath = rawSrc;
+            try { zipPath = new URL(rawSrc, chapterBase).pathname.replace(/^\//, ''); } catch (e) {}
+            const url = `/api/books/${bookId}/epub-resource/${zipPath}`;
+            if (_epubPrefetch.imgs.has(url)) return;
+            _epubPrefetch.imgs.set(url, null); // mark in-flight
+            return fetch(url).then(r => {
+                if (!r.ok) { _epubPrefetch.imgs.set(url, null); return null; } // permanent failure, no retry
+                return r.blob();
+            }).then(b => { if (b) _epubPrefetch.imgs.set(url, URL.createObjectURL(b)); })
+              .catch(() => _epubPrefetch.imgs.delete(url)); // network error: allow one retry
+        }));
+    } catch (e) {
+        _epubPrefetch.sections.delete(sectionHref); // allow retry
+    }
+}
+
+// Prefetch up to 3 upcoming spine sections, chained sequentially on idle so
+// prefetch doesn't compete with the user's active page navigation.
+function _epubSchedulePrefetch(bookId, spineItems, fromIdx) {
+    let slot = 1;
+    const fetchNext = () => {
+        if (slot > 3 || _epubPrefetch.bookId !== bookId) return;
+        const item = spineItems[fromIdx + slot++];
+        if (!item || !item.href) return fetchNext(); // skip gaps in spine
+        _epubPrefetchSection(bookId, item.href).then(() => {
+            if (typeof requestIdleCallback !== 'undefined') {
+                requestIdleCallback(fetchNext, { timeout: 3000 });
+            } else {
+                setTimeout(fetchNext, 200);
+            }
+        });
+    };
+    if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(fetchNext, { timeout: 2000 });
+    } else {
+        setTimeout(fetchNext, 400);
+    }
+}
 
 // ── Views ───────────────────────────────────────────────────
 function showView(id) {
@@ -1937,6 +2091,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // Keyboard navigation in reader
   document.addEventListener('keydown', handleReaderKeys);
+  // Jump input keyboard
+  document.getElementById('epub-jump-input').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.stopPropagation(); epubDoJump(); }
+    if (e.key === 'Escape') { e.stopPropagation(); epubHideJump(); }
+  });
   checkAuth();
   // Hash-based deep link navigation
   window.addEventListener('hashchange', () => {
@@ -1995,6 +2154,8 @@ async function closeReader() {
   // Flush any pending debounced save immediately
   clearTimeout(state.saveProgressTimer);
   await saveCurrentProgress();
+  // Release prefetched EPUB resources (revokes blob: URLs, frees memory)
+  _epubCacheClear();
   // Clean up readers
   if (state.epubBook) {
     try { state.epubBook.destroy(); } catch(e) {}
@@ -2010,6 +2171,12 @@ async function closeReader() {
   document.getElementById('epub-area').innerHTML = '';
   document.getElementById('pdf-container').innerHTML = '';
   document.getElementById('comic-img').src = '';
+  document.getElementById('font-controls').style.display = 'none';
+  document.getElementById('theme-controls').style.display = 'none';
+  document.getElementById('epub-container').style.background = '#fff';
+  document.getElementById('epub-nav-bar').classList.remove('visible');
+  document.getElementById('epub-jump-overlay').classList.remove('active');
+  epubFontSize = 100;
 
   showView('library-view');
   loadContinueReading();
@@ -2021,6 +2188,12 @@ async function openEpub(bookId) {
   const area = document.getElementById('epub-area');
   container.style.display = 'block';
   container.style.flex = '1';
+  epubFontSize = 100;
+  document.getElementById('font-controls').style.display = 'flex';
+  const themeCtrl = document.getElementById('theme-controls');
+  themeCtrl.style.display = 'flex';
+  document.querySelectorAll('.theme-dot').forEach(d => d.classList.toggle('active', d.dataset.theme === epubTheme));
+  container.style.background = (EPUB_THEMES[epubTheme] || EPUB_THEMES.light).bg;
   area.innerHTML = '<div style="color:#333;padding:20px;text-align:center">Loading EPUB...</div>';
 
   // epub.js needs explicit pixel dimensions - calculate from viewport
@@ -2028,21 +2201,25 @@ async function openEpub(bookId) {
   const topbarH = topbarRect.bottom;  // includes border, margin, position
   const enrBar = document.querySelector('.enrichment-bar.active');
   const enrH = enrBar ? enrBar.offsetHeight : 0;
-  const areaH = window.innerHeight - topbarH - enrH - 20;
+  const EPUB_NAV_H = 44;
+  const areaH = window.innerHeight - topbarH - enrH - EPUB_NAV_H;
   area.style.height = areaH + 'px';
   area.style.width = '100%';
   area.style.overflow = 'hidden';
 
   try {
-    const resp = await fetch(`/api/books/${bookId}/file`);
-    const buf = await resp.arrayBuffer();
-    const book = ePub(buf);
+    const book = ePub(`/api/books/${bookId}/file`, { openAs: 'epub' });
     state.epubBook = book;
+    _epubCacheClear();            // drop any leftover state from a previously opened book
+    _epubPrefetch.bookId = bookId;
 
-    book.on('openFailed', (err) => console.error('EPUB openFailed:', err));
+    // Wrap book.opened so openFailed rejects it instead of hanging forever
+    await new Promise((resolve, reject) => {
+      book.on('openFailed', (err) => reject(err || new Error('EPUB openFailed')));
+      book.opened.then(resolve).catch(reject);
+    });
 
     // Detect fixed-layout EPUBs
-    await book.opened;
     const isFixedLayout = book.packaging &&
       book.packaging.metadata &&
       (book.packaging.metadata.layout === 'pre-paginated' ||
@@ -2062,6 +2239,72 @@ async function openEpub(bookId) {
 
     const rendition = book.renderTo(area, renderOpts);
     state.epubRendition = rendition;
+
+    // Nav bar setup
+    const navBar = document.getElementById('epub-nav-bar');
+    const seekbar = document.getElementById('epub-seekbar');
+    const pagePill = document.getElementById('epub-page-pill');
+    const seekLoader = document.getElementById('epub-seek-loader');
+    navBar.classList.add('visible');
+    seekLoader.classList.add('active');
+    seekbar.disabled = true;
+    seekbar.value = 0;
+    pagePill.textContent = '— / —';
+    let _seekDragging = false;
+    seekbar.addEventListener('mousedown', () => { _seekDragging = true; });
+    seekbar.addEventListener('touchstart', () => { _seekDragging = true; }, {passive: true});
+    seekbar.addEventListener('mouseup', () => { _seekDragging = false; });
+    seekbar.addEventListener('touchend', () => { _seekDragging = false; }, {passive: true});
+    seekbar.addEventListener('change', () => {
+      if (!book.locations || !book.locations.length()) return;
+      const cfi = book.locations.cfiFromPercentage(parseInt(seekbar.value) / 1000);
+      if (cfi) rendition.display(cfi);
+    });
+
+    // epub.js resolves EPUB-internal image URLs via blob: URL text substitution.
+    // For flat-structure EPUBs (all files at zip root), this substitution silently
+    // fails because the path matching doesn't line up, leaving <img> broken.
+    // This hook detects unresolved src attributes after epub.js has had its chance,
+    // and replaces them with server-side /api/books/<id>/epub-resource/<path> URLs
+    // that stream the resource directly from the zip. It's a no-op for any src
+    // already resolved to blob:/data:/http (epub.js worked normally).
+    rendition.hooks.content.register((contents) => {
+      const doc = contents.document;
+
+      const _themeEl = doc.createElement('style');
+      _themeEl.id = 'reader-theme';
+      _themeEl.textContent = _epubThemeCSS(EPUB_THEMES[epubTheme] || EPUB_THEMES.light);
+      if (doc.head) doc.head.appendChild(_themeEl);
+
+      // Decode literal JSON Unicode escapes (< → <) left by EPUB generators
+      // that pulled content from a JSON API without unescaping before writing XHTML.
+      const walker = doc.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+      const re = /\\u[0-9a-fA-F]{4}/;
+      let node;
+      while ((node = walker.nextNode())) {
+        if (re.test(node.nodeValue)) {
+          node.nodeValue = node.nodeValue.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) =>
+            String.fromCharCode(parseInt(h, 16)));
+        }
+      }
+
+      const sectionHref = (contents.section && contents.section.href) || '';
+      const chapterBase = 'http://epub-internal/' + sectionHref;
+      doc.querySelectorAll('img[src]').forEach(img => {
+        const rawSrc = img.getAttribute('src');
+        if (!rawSrc || rawSrc.startsWith('blob:') || rawSrc.startsWith('data:') || rawSrc.startsWith('http')) return;
+        let zipPath = rawSrc;
+        try {
+          // Resolve relative path against chapter location to get the zip-internal path.
+          // e.g. section "OEBPS/Text/ch1.xhtml" + src "../images/fig.jpg" → "OEBPS/images/fig.jpg"
+          const resolved = new URL(rawSrc, chapterBase);
+          zipPath = resolved.pathname.replace(/^\//, '');
+        } catch (e) { /* keep rawSrc */ }
+        const serverUrl = `/api/books/${bookId}/epub-resource/${zipPath}`;
+        // Use the prefetched blob: URL if already in cache; fall back to server URL.
+        img.setAttribute('src', _epubPrefetch.imgs.get(serverUrl) || serverUrl);
+      });
+    });
 
     if (isFixedLayout) {
       // Fixed-layout: scale each page to fit container width via CSS transform
@@ -2096,6 +2339,11 @@ async function openEpub(bookId) {
       if (book.locations && book.locations.length()) {
         const pct = book.locations.percentageFromCfi(location.start.cfi);
         updateProgress(Math.round(pct * 100), location.start.cfi);
+        if (!_seekDragging) {
+          seekbar.value = Math.round(pct * 1000);
+          const locIdx = book.locations.locationFromCfi(location.start.cfi);
+          pagePill.textContent = (locIdx !== undefined ? locIdx + 1 : '—') + ' / ' + book.locations.total;
+        }
       } else {
         updateProgress(0, location.start.cfi);
       }
@@ -2104,11 +2352,54 @@ async function openEpub(bookId) {
         firstRelocate = false;
         saveCurrentProgress();
       }
+
+      // Prefetch upcoming sections on idle so navigation feels instant
+      const spineItems = (book.spine && book.spine.spineItems) || [];
+      if (spineItems.length) {
+        const curIdx = (location.start && typeof location.start.index === 'number')
+          ? location.start.index
+          : spineItems.findIndex(s => s.href === (location.start && location.start.href));
+        if (curIdx >= 0) _epubSchedulePrefetch(bookId, spineItems, curIdx);
+      }
+
+      // Release cache when reaching the end (last section of the book)
+      if (location && location.atEnd) _epubCacheClear();
     });
 
-    // Generate locations for progress tracking
-    book.ready.then(() => {
-      return book.locations.generate(1024);
+    // Locations: try server cache first (instant), fall back to generate() + cache result
+    book.ready.then(async () => {
+      try {
+        const r = await fetch(`/api/books/${bookId}/epub-locations`);
+        if (r.ok) {
+          const d = await r.json();
+          if (d.locations) {
+            book.locations.load(d.locations);
+            return; // instant — skip generate()
+          }
+        }
+      } catch(e) {}
+      // Cache miss: generate (slow, browser-side) then save to server
+      await book.locations.generate(1600);
+      try {
+        const locStr = book.locations.save();
+        fetch(`/api/books/${bookId}/epub-locations`, {
+          method: 'PUT',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({ locations: locStr }),
+        }).catch(() => {});
+      } catch(e) {}
+    }).then(() => {
+      seekLoader.classList.remove('active');
+      seekbar.disabled = false;
+      const loc = rendition.currentLocation();
+      if (loc && loc.start && book.locations.length()) {
+        const pct = book.locations.percentageFromCfi(loc.start.cfi);
+        seekbar.value = Math.round(pct * 1000);
+        const locIdx = book.locations.locationFromCfi(loc.start.cfi);
+        pagePill.textContent = (locIdx !== undefined ? locIdx + 1 : '—') + ' / ' + book.locations.total;
+      }
+    }).catch(() => {
+      seekLoader.classList.remove('active');
     });
 
     // Handle window resize
@@ -2116,7 +2407,7 @@ async function openEpub(bookId) {
       const newTopbar = document.querySelector('.reader-topbar').getBoundingClientRect().bottom;
       const enr = document.querySelector('.enrichment-bar.active');
       const enrHeight = enr ? enr.offsetHeight : 0;
-      const newH = window.innerHeight - newTopbar - enrHeight - 20;
+      const newH = window.innerHeight - newTopbar - enrHeight - 44;
       area.style.height = newH + 'px';
       if (state.epubRendition) {
         state.epubRendition.resize(area.clientWidth, newH);
@@ -2138,6 +2429,70 @@ async function openEpub(bookId) {
 
 function epubPrev() { if (state.epubRendition) state.epubRendition.prev(); }
 function epubNext() { if (state.epubRendition) state.epubRendition.next(); }
+
+function epubShowJump() {
+  if (!state.epubBook || !state.epubBook.locations || !state.epubBook.locations.total) return;
+  const total = state.epubBook.locations.total;
+  document.getElementById('epub-jump-label').textContent = 'Aller à (1 – ' + total + ')';
+  const inp = document.getElementById('epub-jump-input');
+  inp.max = total; inp.value = '';
+  document.getElementById('epub-jump-overlay').classList.add('active');
+  inp.focus();
+}
+function epubHideJump() {
+  document.getElementById('epub-jump-overlay').classList.remove('active');
+}
+function epubDoJump() {
+  const val = parseInt(document.getElementById('epub-jump-input').value);
+  const locs = state.epubBook && state.epubBook.locations;
+  if (!locs || !val || val < 1 || val > locs.total) return;
+  const cfi = locs.cfiFromPercentage((val - 1) / locs.total);
+  if (cfi && state.epubRendition) state.epubRendition.display(cfi);
+  epubHideJump();
+}
+
+let epubFontSize = 100;
+const EPUB_THEMES = {
+  light: { bg: '#ffffff', fg: '#111111' },
+  sepia: { bg: '#f6f1e7', fg: '#3b2e1e' },
+  dark:  { bg: '#1e1e1e', fg: '#d8d0c4' },
+};
+let epubTheme = localStorage.getItem('epubTheme') || 'light';
+function _epubThemeCSS(t) {
+  return 'html,body{background:' + t.bg + '!important;color:' + t.fg + '!important}';
+}
+function epubSetTheme(name) {
+  if (!EPUB_THEMES[name]) return;
+  epubTheme = name;
+  localStorage.setItem('epubTheme', name);
+  const t = EPUB_THEMES[name];
+  const container = document.getElementById('epub-container');
+  if (container) container.style.background = t.bg;
+  document.querySelectorAll('.theme-dot').forEach(d => d.classList.toggle('active', d.dataset.theme === name));
+  if (state.epubRendition) {
+    state.epubRendition.getContents().forEach(c => {
+      if (!c.document) return;
+      let el = c.document.getElementById('reader-theme');
+      if (!el) { el = c.document.createElement('style'); el.id = 'reader-theme'; c.document.head && c.document.head.appendChild(el); }
+      el.textContent = _epubThemeCSS(t);
+    });
+  }
+}
+function _epubApplyFontSize() {
+  const area = document.getElementById('epub-area');
+  state.epubRendition.themes.fontSize(epubFontSize + '%');
+  if (area) setTimeout(() => state.epubRendition.resize(area.clientWidth, area.clientHeight), 60);
+}
+function epubFontDec() {
+  if (!state.epubRendition || epubFontSize <= 60) return;
+  epubFontSize -= 10;
+  _epubApplyFontSize();
+}
+function epubFontInc() {
+  if (!state.epubRendition || epubFontSize >= 200) return;
+  epubFontSize += 10;
+  _epubApplyFontSize();
+}
 
 // ── PDF Reader ──────────────────────────────────────────────
 async function openPdf(bookId) {
@@ -2696,12 +3051,9 @@ document.addEventListener('DOMContentLoaded', () => {
 })();
 </script>
 
-<div class="fmt-picker-overlay" id="fmt-picker" onclick="if(event.target===this)closeFormatPicker()">
-  <div class="fmt-picker-box">
-    <h3 id="fmt-picker-title">Choose Format</h3>
-    <div class="fmt-subtitle">This book is available in multiple formats</div>
-    <div class="fmt-options" id="fmt-picker-options"></div>
-  </div>
-</div>
+
+<footer style="text-align:center; padding:12px; font-size:11px; opacity:0.5;">
+  BookHaven v{{ version }}
+</footer>
 </body>
 </html>

@@ -37,6 +37,8 @@ import database
 import scanner
 import media_worker
 
+__version__ = "1.2.47"
+
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
     import config as _cfg
@@ -93,6 +95,71 @@ NO_COVER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="30
 <text x="100" y="140" text-anchor="middle" fill="#666" font-family="Arial" font-size="16">No Cover</text>
 <text x="100" y="180" text-anchor="middle" fill="#555" font-family="Arial" font-size="40">📖</text>
 </svg>'''
+
+def _resolve_book_path(path):
+    """Return the real filesystem path for a book.
+
+    Paths stored before the standalone migration used ``/books`` as the root.
+    This function remaps those legacy paths to the current BOOKS_ROOT.
+    WSL paths of the form /mnt/X/... are translated to X:\... for Windows.
+    If the path already exists on disk it is returned unchanged.
+    """
+    if not path:
+        return path
+    if os.path.exists(path):
+        return path
+    # Translate WSL DrvFs paths (/mnt/h/...) to Windows paths (H:\...) when
+    # running under Windows Python with a DB populated from WSL.
+    import re as _re
+    _wsl = _re.match(r'^/mnt/([a-zA-Z])(/.*)$', path)
+    if _wsl:
+        candidate = _wsl.group(1).upper() + ":" + _wsl.group(2).replace("/", os.sep)
+        if os.path.exists(candidate):
+            return candidate
+    _LEGACY_PREFIX = "/books"
+    if path.startswith(_LEGACY_PREFIX + "/") or path == _LEGACY_PREFIX:
+        suffix = path[len(_LEGACY_PREFIX):]  # starts with "/"
+        candidate = config.BOOKS_ROOT.rstrip("/\\") + suffix.replace("/", os.sep)
+        if os.path.exists(candidate):
+            return candidate
+    return path
+
+
+def _migrate_legacy_paths():
+    """Update any /books/... DB paths to current BOOKS_ROOT paths in-place.
+
+    Also renames cover cache files from the old /books/... hash to the new
+    BOOKS_ROOT hash so covers remain visible after migration.
+    """
+    _LEGACY_PREFIX = "/books"
+    conn = database.get_db()
+    rows = conn.execute(
+        "SELECT id, path FROM books WHERE path LIKE ?", (_LEGACY_PREFIX + "/%",)
+    ).fetchall()
+    updated = 0
+    covers_renamed = 0
+    for row in rows:
+        new_path = _resolve_book_path(row["path"])
+        if new_path != row["path"] and os.path.exists(new_path):
+            conn.execute("UPDATE books SET path = ? WHERE id = ?", (new_path, row["id"]))
+            updated += 1
+            # Rename the cover cache file to match new path hash
+            old_hash = hashlib.md5(row["path"].encode()).hexdigest()
+            new_hash = hashlib.md5(new_path.encode()).hexdigest()
+            old_cover = os.path.join(config.COVER_CACHE_DIR, f"{old_hash}.jpg")
+            new_cover = os.path.join(config.COVER_CACHE_DIR, f"{new_hash}.jpg")
+            if os.path.exists(old_cover) and not os.path.exists(new_cover):
+                try:
+                    os.rename(old_cover, new_cover)
+                    covers_renamed += 1
+                except OSError:
+                    pass
+    if updated:
+        conn.commit()
+        logger.info(f"Migrated {updated} legacy /books/... paths to {config.BOOKS_ROOT}"
+                    f" ({covers_renamed} cover files renamed)")
+    conn.close()
+
 
 def _base_filename(filename):
     """Strip extension to get base filename for grouping multi-format variants."""
@@ -342,6 +409,176 @@ def api_book_detail(book_id):
         return jsonify({"error": str(e)}), 500
 
 
+def _fixup_epub_images(epub_path):
+    """Detect and fix image issues in a Calibre-converted EPUB.
+
+    Calibre sometimes extracts images from PDFs but writes broken relative
+    paths in the HTML, or leaves images in the zip with no HTML reference.
+    Fixes both: patches broken paths by basename lookup, and appends an extra
+    HTML page for any images that remain unreferenced.
+
+    Returns (broken_fixed, images_added).
+    """
+    IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.svg', '.webp', '.bmp'}
+    broken_fixed = 0
+    images_added = 0
+    tmp_path = epub_path + '.tmp.epub'
+
+    try:
+        # ── 1. Read entire zip into memory ────────────────────────────────────
+        all_files = {}
+        with zipfile.ZipFile(epub_path, 'r') as zf:
+            for name in zf.namelist():
+                all_files[name] = zf.read(name)
+
+        names = set(all_files)
+        epub_images = {n for n in names
+                       if os.path.splitext(n)[1].lower() in IMAGE_EXTS}
+        if not epub_images:
+            return 0, 0
+
+        # ── 2. Locate OPF ─────────────────────────────────────────────────────
+        opf_path = None
+        if 'META-INF/container.xml' in all_files:
+            m = re.search(r'full-path=["\']([^"\']+\.opf)["\']',
+                          all_files['META-INF/container.xml'].decode('utf-8', errors='replace'))
+            if m:
+                opf_path = m.group(1)
+        if not opf_path:
+            opf_path = next((n for n in names if n.endswith('.opf')), None)
+
+        # ── 3. Scan HTML src= references ─────────────────────────────────────
+        html_files = [n for n in names
+                      if os.path.splitext(n)[1].lower() in ('.html', '.xhtml', '.htm')
+                      and 'toc' not in n.lower()]
+        referenced = set()
+        broken_by_file = {}
+
+        def _resolve(hf_dir, src):
+            """Resolve a relative src to an absolute zip name."""
+            raw = (hf_dir + '/' + src) if hf_dir else src
+            parts = []
+            for seg in raw.split('/'):
+                if seg == '..':
+                    if parts:
+                        parts.pop()
+                elif seg and seg != '.':
+                    parts.append(seg)
+            return '/'.join(parts)
+
+        for hf in html_files:
+            content = all_files[hf].decode('utf-8', errors='replace')
+            hf_dir = hf.rsplit('/', 1)[0] if '/' in hf else ''
+
+            for m in re.finditer(r'src=["\']([^"\']+)["\']', content, re.IGNORECASE):
+                src = m.group(1)
+                if src.startswith('data:') or src.startswith('http'):
+                    continue
+                resolved = _resolve(hf_dir, src)
+                if resolved in names:
+                    referenced.add(resolved)
+                elif os.path.splitext(resolved)[1].lower() in IMAGE_EXTS:
+                    # Broken path — find by basename
+                    basename = src.rsplit('/', 1)[-1]
+                    candidates = [img for img in epub_images
+                                  if img == basename or img.endswith('/' + basename)]
+                    if candidates:
+                        target = candidates[0]
+                        t_parts = target.split('/')
+                        h_parts = hf_dir.split('/') if hf_dir else []
+                        common = sum(1 for a, b in zip(h_parts, t_parts) if a == b)
+                        new_rel = '../' * (len(h_parts) - common) + '/'.join(t_parts[common:])
+                        broken_by_file.setdefault(hf, []).append((src, new_rel))
+                        referenced.add(target)
+
+        unreferenced = epub_images - referenced
+
+        if not broken_by_file and not unreferenced:
+            logger.info(f"EPUB image audit OK: {len(epub_images)} image(s) all referenced")
+            return 0, 0
+
+        if broken_by_file:
+            logger.warning(f"EPUB image audit: {sum(len(v) for v in broken_by_file.values())} broken img path(s)")
+        if unreferenced:
+            logger.warning(f"EPUB image audit: {len(unreferenced)} unreferenced image(s) – appending page")
+
+        # ── 4. Rewrite EPUB ───────────────────────────────────────────────────
+        with zipfile.ZipFile(tmp_path, 'w', zipfile.ZIP_DEFLATED) as zout:
+            # mimetype must come first, uncompressed
+            if 'mimetype' in all_files:
+                info = zipfile.ZipInfo('mimetype')
+                info.compress_type = zipfile.ZIP_STORED
+                zout.writestr(info, all_files['mimetype'])
+
+            skip = {'mimetype'}
+            if unreferenced and opf_path:
+                skip.add(opf_path)  # Rewritten below after patching
+
+            for name, data in all_files.items():
+                if name in skip:
+                    continue
+                if name in broken_by_file:
+                    content = data.decode('utf-8', errors='replace')
+                    for old_src, new_src in broken_by_file[name]:
+                        content = content.replace(f'src="{old_src}"', f'src="{new_src}"')
+                        content = content.replace(f"src='{old_src}'", f"src='{new_src}'")
+                        broken_fixed += 1
+                    zout.writestr(name, content.encode('utf-8'))
+                else:
+                    zout.writestr(name, data)
+
+            # Extra page for unreferenced images
+            if unreferenced and opf_path:
+                opf_dir = opf_path.rsplit('/', 1)[0] if '/' in opf_path else ''
+                extra_name = (opf_dir + '/' if opf_dir else '') + 'Text/extra_images.xhtml'
+                h_parts = extra_name.rsplit('/', 1)[0].split('/')
+
+                img_tags = []
+                for img_name in sorted(unreferenced):
+                    i_parts = img_name.split('/')
+                    common = sum(1 for a, b in zip(h_parts, i_parts) if a == b)
+                    rel = '../' * (len(h_parts) - common) + '/'.join(i_parts[common:])
+                    img_tags.append(f'<p><img src="{rel}" alt="" style="max-width:100%"/></p>')
+                    images_added += 1
+
+                extra_html = ('<?xml version="1.0" encoding="UTF-8"?>\n'
+                              '<!DOCTYPE html>\n'
+                              '<html xmlns="http://www.w3.org/1999/xhtml">'
+                              '<head><title>Extracted Images</title></head>'
+                              '<body>\n' + '\n'.join(img_tags) + '\n</body></html>')
+                zout.writestr(extra_name, extra_html.encode('utf-8'))
+
+                # Patch OPF manifest + spine
+                opf_str = all_files[opf_path].decode('utf-8', errors='replace')
+                manifest_item = '<item id="extra_images" href="Text/extra_images.xhtml" media-type="application/xhtml+xml"/>'
+                spine_item = '<itemref idref="extra_images"/>'
+                opf_str = re.sub(
+                    r'</([a-zA-Z]+:)?manifest>',
+                    lambda m_: f'  {manifest_item}\n  </{m_.group(1) or ""}manifest>',
+                    opf_str)
+                opf_str = re.sub(
+                    r'</([a-zA-Z]+:)?spine>',
+                    lambda m_: f'  {spine_item}\n  </{m_.group(1) or ""}spine>',
+                    opf_str)
+                zout.writestr(opf_path, opf_str.encode('utf-8'))
+
+        os.replace(tmp_path, epub_path)
+        if broken_fixed:
+            logger.info(f"Fixed {broken_fixed} broken image path(s) in EPUB")
+        if images_added:
+            logger.info(f"Appended {images_added} unreferenced image(s) to EPUB as extra page")
+        return broken_fixed, images_added
+
+    except Exception as e:
+        logger.error(f"EPUB image fixup failed: {e}\n{traceback.format_exc()}")
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
+        return 0, 0
+
+
 convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None, "current_page": 0, "total_pages": 0, "started_at": 0}
 
 
@@ -350,9 +587,10 @@ convert_state = {"running": False, "book_id": None, "message": "", "epub_id": No
 def api_convert_epub(book_id):
     """Convert a PDF book to EPUB using Calibre (async)."""
     if convert_state["running"]:
-        # Check if the process is actually still alive
-        if not any(True for _ in os.popen("tasklist /FI \"IMAGENAME eq ebook-convert.exe\" /NH").read().strip().split("\n") if "ebook-convert" in _):
-            convert_state["running"] = False  # stale state, reset
+        # Treat as stale if running for more than 15 min with no progress
+        elapsed = time.time() - convert_state.get("started_at", 0)
+        if elapsed > 900:
+            convert_state["running"] = False
         else:
             return jsonify({"error": "A conversion is already in progress"}), 409
     try:
@@ -366,7 +604,7 @@ def api_convert_epub(book_id):
             conn.close()
             return jsonify({"error": "Only PDF books can be converted"}), 400
 
-        pdf_path = book["path"]
+        pdf_path = _resolve_book_path(book["path"])
         epub_path = os.path.splitext(pdf_path)[0] + ".epub"
         if os.path.exists(epub_path):
             conn.close()
@@ -388,12 +626,14 @@ def api_convert_epub(book_id):
             convert_state["started_at"] = _time.time()
             try:
                 import re as _re
+                pdf_dir = os.path.dirname(pdf_path)
                 proc = subprocess.Popen(
-                    ["ebook-convert", pdf_path, epub_path,
+                    [config.CALIBRE_CONVERT, pdf_path, epub_path,
                      "--title", book_dict["title"],
-                     "--authors", book_dict["author"] or "Unknown"],
+                     "--authors", book_dict["author"] or "Unknown",
+                     "--dont-split-on-page-breaks"],
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                    bufsize=0
+                    bufsize=0, cwd=pdf_dir
                 )
                 # Read byte-by-byte to defeat Windows pipe buffering
                 buf = b""
@@ -407,6 +647,8 @@ def api_convert_epub(book_id):
                         buf = b""
                         if not line:
                             continue
+                        # Log everything from Calibre for debugging
+                        logger.info(f"[calibre] {line}")
                         # Calibre: "Page-N" or "N% ..."
                         page_match = _re.match(r"Page-(\d+)", line)
                         pct_match = _re.match(r"(\d+)%", line)
@@ -423,6 +665,10 @@ def api_convert_epub(book_id):
                     convert_state["error"] = "Conversion failed"
                     convert_state["message"] = "Failed"
                     return
+
+                # Post-process: fix any broken/missing image references
+                convert_state["message"] = "Checking images..."
+                _fixup_epub_images(epub_path)
 
                 convert_state["message"] = "Finalizing..."
                 file_size = os.path.getsize(epub_path)
@@ -488,7 +734,7 @@ def api_optimize_epub(book_id):
             conn.close()
             return jsonify({"error": "Only EPUB books can be optimized"}), 400
 
-        orig_path = book["path"]
+        orig_path = _resolve_book_path(book["path"])
         tmp_path = orig_path + ".optimized.epub"
 
         MINIMAL_CSS = b"""
@@ -797,7 +1043,11 @@ def api_book_file(book_id):
     book = conn.execute("SELECT path, format, filename FROM books WHERE id = ?", (book_id,)).fetchone()
     conn.close()
 
-    if not book or not os.path.exists(book["path"]):
+    if not book:
+        abort(404)
+
+    resolved_path = _resolve_book_path(book["path"])
+    if not os.path.exists(resolved_path):
         abort(404)
 
     mime_map = {
@@ -808,7 +1058,103 @@ def api_book_file(book_id):
         "mobi": "application/x-mobipocket-ebook",
     }
     mimetype = mime_map.get(book["format"], "application/octet-stream")
-    return send_file(book["path"], mimetype=mimetype, download_name=book["filename"])
+    # Pre-read into BytesIO so the H: drive (network mount) is fully read before the HTTP
+    # response starts — prevents the browser receiving a truncated zip on slow drives.
+    try:
+        with open(resolved_path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        abort(500, description=str(e))
+    from io import BytesIO
+    return send_file(BytesIO(data), mimetype=mimetype, download_name=book["filename"])
+
+
+@app.route("/api/books/<int:book_id>/epub-resource/<path:resource_path>")
+@login_required
+def api_epub_resource(book_id, resource_path):
+    """Serve a single resource (image, CSS, font) extracted from an EPUB zip.
+
+    epub.js resolves internal EPUB resources via blob: URLs built from the zip
+    contents. For flat-structure EPUBs (all files at zip root), its text-based
+    URL substitution can silently fail to match relative src attributes, leaving
+    images broken. This endpoint gives the client a reliable fallback: look up
+    the resource by zip-internal path and stream it back with the correct MIME
+    type. The client-side content hook rewrites unresolved <img src> attributes
+    to point here instead of relying on epub.js's internal blob URL machinery.
+    """
+    conn = database.get_db()
+    book = conn.execute("SELECT path, format FROM books WHERE id = ?", (book_id,)).fetchone()
+    conn.close()
+
+    if not book or book["format"] != "epub":
+        abort(404)
+
+    epub_path = _resolve_book_path(book["path"])
+    if not os.path.exists(epub_path):
+        abort(404)
+
+    # Guard against directory traversal
+    resource_path = resource_path.lstrip("/")
+    if ".." in resource_path.split("/"):
+        abort(400)
+
+    try:
+        with zipfile.ZipFile(epub_path, "r") as zf:
+            try:
+                data = zf.read(resource_path)
+            except KeyError:
+                # epub.js gives paths relative to the OPF directory (e.g. "Text/ch1.xhtml")
+                # but the zip stores them at "OEBPS/Text/ch1.xhtml". Read container.xml
+                # to find the OPF base directory and retry.
+                try:
+                    container_xml = zf.read("META-INF/container.xml").decode("utf-8", errors="replace")
+                    import re as _re
+                    m = _re.search(r'full-path=["\']([^"\']+)["\']', container_xml)
+                    if m:
+                        opf_dir = "/".join(m.group(1).split("/")[:-1])
+                        if opf_dir:
+                            data = zf.read(opf_dir + "/" + resource_path)
+                        else:
+                            abort(404)
+                    else:
+                        abort(404)
+                except KeyError:
+                    abort(404)
+    except zipfile.BadZipFile:
+        abort(400)
+
+    mime = mimetypes.guess_type(resource_path)[0] or "application/octet-stream"
+    resp = Response(data, mimetype=mime)
+    resp.headers["Cache-Control"] = "public, max-age=3600"
+    return resp
+
+
+EPUB_LOC_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "epub_locations")
+
+
+@app.route("/api/books/<int:book_id>/epub-locations", methods=["GET"])
+@login_required
+def api_get_epub_locations(book_id):
+    """Return cached epub.js locations JSON for instant seekbar on re-open."""
+    path = os.path.join(EPUB_LOC_CACHE_DIR, f"{book_id}.json")
+    if not os.path.exists(path):
+        return jsonify({"locations": None})
+    with open(path, "r", encoding="utf-8") as f:
+        return jsonify({"locations": f.read()})
+
+
+@app.route("/api/books/<int:book_id>/epub-locations", methods=["PUT"])
+@login_required
+def api_put_epub_locations(book_id):
+    """Store epub.js locations JSON generated by the client."""
+    data = request.get_json(silent=True)
+    if not data or not isinstance(data.get("locations"), str):
+        abort(400)
+    os.makedirs(EPUB_LOC_CACHE_DIR, exist_ok=True)
+    path = os.path.join(EPUB_LOC_CACHE_DIR, f"{book_id}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(data["locations"])
+    return jsonify({"ok": True})
 
 
 @app.route("/api/books/<int:book_id>/comic-pages")
@@ -822,10 +1168,11 @@ def api_comic_pages(book_id):
     if not book:
         abort(404)
 
+    resolved_path = _resolve_book_path(book["path"])
     if book["format"] == "mobi":
-        count = _mobi_page_count(book["path"])
+        count = _mobi_page_count(resolved_path)
         return jsonify({"pages": list(range(count)), "total": count})
-    pages = _list_comic_pages(book["path"], book["format"])
+    pages = _list_comic_pages(resolved_path, book["format"])
     return jsonify({"pages": pages, "total": len(pages)})
 
 
@@ -840,11 +1187,13 @@ def api_comic_page(book_id, page_num):
     if not book:
         abort(404)
 
+    resolved_path = _resolve_book_path(book["path"])
+
     # MOBI: render page via PyMuPDF
     if book["format"] == "mobi":
         try:
             import fitz
-            doc = fitz.open(book["path"])
+            doc = fitz.open(resolved_path)
             if page_num < 0 or page_num >= doc.page_count:
                 doc.close()
                 abort(404)
@@ -857,7 +1206,7 @@ def api_comic_page(book_id, page_num):
             logger.error(f"Error serving MOBI page: {e}")
             abort(500)
 
-    pages = _list_comic_pages(book["path"], book["format"])
+    pages = _list_comic_pages(resolved_path, book["format"])
     if page_num < 0 or page_num >= len(pages):
         abort(404)
 
@@ -866,7 +1215,7 @@ def api_comic_page(book_id, page_num):
     mime = mimetypes.types_map.get(ext, "image/jpeg")
 
     try:
-        archive = _open_comic_archive(book["path"], book["format"])
+        archive = _open_comic_archive(resolved_path, book["format"])
         if not archive:
             abort(415)
         with archive:
@@ -1755,7 +2104,17 @@ def api_upload_cancel():
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    return render_template("index.html", version=__version__)
+
+
+@app.route("/api/version")
+def api_version():
+    return jsonify({"version": __version__})
+
+
+@app.route("/download")
+def download_page():
+    return render_template("download.html", version=__version__)
 
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -1764,11 +2123,13 @@ if __name__ == "__main__":
     logger.info("BookHaven starting...")
     logger.info(f"  Database: {config.DB_PATH}")
     logger.info(f"  Libraries: {config.LIBRARY_PATHS}")
-    logger.info(f"  Jellyfin: {config.JELLYFIN_URL}")
     logger.info(f"  rarfile support: {HAS_RARFILE}")
 
     # Initialize database
     database.init_db()
+
+    # Migrate any legacy /books/... paths left in DB to current BOOKS_ROOT
+    _migrate_legacy_paths()
 
     # Create static img dir
     os.makedirs(os.path.join(app.static_folder, "img"), exist_ok=True)
