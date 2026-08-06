@@ -116,10 +116,41 @@ def test_valid_dest_folder_allowed(client, tmp_path):
     assert resp.status_code == 200
 
 
+# ── Filename sanitizer unit tests ───────────────────────────────────────────
+
+@pytest.mark.parametrize("raw,expected", [
+    # Path traversal must be stripped
+    ("../../evil.epub", "evil.epub"),
+    ("..\\..\\evil.epub", "evil.epub"),
+    (r"C:\Windows\System32\evil.epub", "evil.epub"),
+    ("/etc/passwd.epub", "passwd.epub"),
+    # Unicode titles must survive (regression: secure_filename destroyed these)
+    ("\u4e00\u672c\u306e\u672c.epub", "\u4e00\u672c\u306e\u672c.epub"),
+    ("\u0412\u043e\u0439\u043d\u0430 \u0438 \u043c\u0438\u0440.epub",
+     "\u0412\u043e\u0439\u043d\u0430 \u0438 \u043c\u0438\u0440.epub"),
+    ("Les Mis\u00e9rables.epub", "Les Mis\u00e9rables.epub"),
+    ("L\u2019\u00c9tranger - Camus.epub", "L\u2019\u00c9tranger - Camus.epub"),
+])
+def test_safe_filename_cases(raw, expected):
+    assert bookhaven._safe_filename(raw) == expected
+
+
+@pytest.mark.parametrize("raw", ["..", ".", "", "   ", "/", "\\", "...", "<>:|?*"])
+def test_safe_filename_rejects_degenerate(raw):
+    assert bookhaven._safe_filename(raw) == ""
+
+
+def test_safe_filename_strips_control_chars():
+    assert "\x00" not in bookhaven._safe_filename("ev\x00il.epub")
+
+
+def test_safe_filename_windows_reserved():
+    assert bookhaven._safe_filename("CON.epub") != "CON.epub"
+
+
 # ── 1.3 Filename sanitization ───────────────────────────────────────────────
 
-def test_malicious_filename_sanitized(client, tmp_path):
-    c, lib_path = client
+def _analyze(c, lib_path, upload_name):
     fake_meta = {
         "title": "Evil", "author": "", "genre": "", "series": "",
         "series_index": 0, "collection_path": "",
@@ -129,18 +160,31 @@ def test_malicious_filename_sanitized(client, tmp_path):
                       return_value=("Books", lib_path, "auto", False)):
         resp = c.post(
             "/api/upload/analyze",
-            data={"file": (_make_epub(), "../../evil.epub", "application/epub+zip")},
+            data={"file": (_make_epub(), upload_name, "application/epub+zip")},
             content_type="multipart/form-data",
         )
-    assert resp.status_code == 200
-    data = resp.get_json()
-    assert data["filename"] == "evil.epub"
-    # cleanup temp file
-    uid = data.get("upload_id")
-    if uid:
-        pending = bookhaven._pending_uploads.pop(uid, None)
+    data = resp.get_json() if resp.status_code == 200 else None
+    if data:
+        pending = bookhaven._pending_uploads.pop(data.get("upload_id"), None)
         if pending:
             try:
                 os.unlink(pending["temp_path"])
             except OSError:
                 pass
+    return resp, data
+
+
+def test_malicious_filename_sanitized(client, tmp_path):
+    c, lib_path = client
+    resp, data = _analyze(c, lib_path, "../../evil.epub")
+    assert resp.status_code == 200
+    assert data["filename"] == "evil.epub"
+
+
+def test_unicode_filename_accepted(client, tmp_path):
+    """Regression: secure_filename() folded CJK titles to '' and 400'd them."""
+    c, lib_path = client
+    name = "一本の本.epub"
+    resp, data = _analyze(c, lib_path, name)
+    assert resp.status_code == 200, resp.data
+    assert data["filename"] == name

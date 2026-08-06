@@ -14,7 +14,6 @@ import mimetypes
 import traceback
 from functools import wraps
 from io import BytesIO
-from werkzeug.utils import secure_filename
 
 from flask import (
     Flask, request, jsonify, send_file, send_from_directory,
@@ -83,6 +82,40 @@ def test_login():
 
 # Image extensions for comic page serving
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+
+# Characters that are illegal in a Windows filename, plus control chars.
+_UNSAFE_FILENAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+# Device names Windows reserves regardless of extension.
+_WINDOWS_RESERVED = {
+    "CON", "PRN", "AUX", "NUL",
+    *(f"COM{i}" for i in range(1, 10)),
+    *(f"LPT{i}" for i in range(1, 10)),
+}
+
+
+def _safe_filename(name):
+    """Return a filesystem-safe basename, or '' if nothing usable remains.
+
+    werkzeug's secure_filename() is not usable here: it ASCII-folds the name,
+    which reduces non-Latin titles (CJK, Cyrillic, Greek) to an empty string
+    and makes those uploads impossible. We only need to neutralise path
+    traversal and illegal characters, so Unicode is preserved as-is.
+    """
+    if not name:
+        return ""
+    # Drop any directory component, whichever separator was used.
+    name = name.replace("\\", "/").split("/")[-1]
+    name = _UNSAFE_FILENAME_RE.sub("_", name)
+    # Windows silently strips trailing dots/spaces; do it explicitly so the
+    # name we validate is the name that lands on disk.
+    name = name.strip(" .")
+    # Nothing but replacement characters left means the name carried no
+    # usable content at all.
+    if not name or not name.strip("_"):
+        return ""
+    if os.path.splitext(name)[0].upper() in _WINDOWS_RESERVED:
+        name = "_" + name
+    return name[:200]
 
 # Scan state (simple in-memory tracking)
 scan_state = {"running": False, "current": 0, "total": 0, "message": "", "cancel": False}
@@ -1891,7 +1924,7 @@ def api_upload_analyze():
     if not f.filename:
         return jsonify({"error": "No filename"}), 400
 
-    filename = secure_filename(f.filename)
+    filename = _safe_filename(f.filename)
     if not filename:
         return jsonify({"error": "Invalid filename"}), 400
     ext = os.path.splitext(filename)[1].lower()
