@@ -1,6 +1,6 @@
 # BookHaven
 
-Flask-based book reader web server with EPUB/PDF/CBZ/CBR/MOBI support, AI genre classification (Ollama), and local user auth. Runs **only** as a Docker container — never as a standalone Python server.
+Flask-based book reader web server with EPUB/PDF/CBZ/CBR/MOBI support, AI genre classification (Ollama), and local user auth. Tourne comme **processus Python standalone sous Windows** — Docker n'est pas installé sur la machine et n'est plus utilisé.
 
 ## Règles standing du fleet (2026-04-30)
 
@@ -22,17 +22,45 @@ Flask-based book reader web server with EPUB/PDF/CBZ/CBR/MOBI support, AI genre 
 ## Architecture
 
 - **Python/Flask** monolithe (`bookhaven.py`) avec modules séparés : `database.py`, `scanner.py`, `genre_ai.py`, `media_worker.py`, `config.py`.
-- **SQLite** en WAL mode dans un volume Docker nommé (`bookhaven_data`) — pas en bind mount (incompatible WAL sur Windows).
+- **SQLite** en WAL mode : `data/bookhaven.db` (chemin `config.DB_PATH`).
 - **Ollama local** pour la classification de genre (modèle `llama3.1:latest`).
-- **Bibliothèque** : `H:\Books` montée en `/books` dans le conteneur (lecture/écriture).
-- **Auth locale** (pas Jellyfin) : table `users` avec sélection sur la page d'accueil.
+- **Bibliothèque** : `H:\Books` (sous-dossiers `Books`, `Comics`, `Education`, `Magazines`, `Professionel`).
+- **Auth locale** (pas Jellyfin) : table `users` avec sélection sur la page d'accueil, sans mot de passe.
 
 ## Lancement
 
-Le projet ne tourne **que** via Docker Compose :
+Processus Python standalone, port 8097, piloté par le Planificateur de tâches Windows :
 
-```bash
-docker compose up -d
+| Tâche | Action | Rôle |
+|---|---|---|
+| `BookHaven-server` | `scripts\start-server.cmd` | Démarre au logon. Idempotent : tue le process sur le port 8097 puis relance. |
+| `BookHaven-watchdog` | `node scripts\bookhaven-watchdog.mjs` | Sonde `http://127.0.0.1:8097/` toutes les 10 s, relance après 2 échecs consécutifs. |
+
+Redémarrage manuel :
+
+```powershell
+# Arrêter proprement le watchdog avant toute intervention longue,
+# sinon il relancera le serveur en parallèle.
+New-Item C:\Dev\BookHaven\logs\watchdog.stop -ItemType File
+& C:\Dev\BookHaven\scripts\start-server.cmd
+Start-ScheduledTask -TaskName BookHaven-watchdog
 ```
 
-Ne **jamais** lancer `python bookhaven.py` en standalone — la version standalone a été supprimée du Startup Windows pour éviter les conflits.
+`debug=False` : **aucun rechargement à chaud du code Python**. Toute modification de
+`.py` exige un redémarrage. Seuls les templates se rechargent seuls
+(`TEMPLATES_AUTO_RELOAD=True`).
+
+## Configuration
+
+`.env` à la racine (non versionné, couvert par `.gitignore`) — voir `.env.example`.
+
+- `BOOKHAVEN_SECRET_KEY` : **obligatoire**, minimum 32 caractères. `config.py` lève
+  une `RuntimeError` au démarrage si la clé est absente, trop courte, ou égale à
+  l'ancienne valeur de dev. Génération : `python -c "import secrets; print(secrets.token_hex(32))"`.
+- `BOOKS_ROOT` : racine de la bibliothèque.
+
+⚠️ **Dette connue** : `BOOKS_ROOT` vaut actuellement `/mnt/h/Books` (reliquat WSL/Docker).
+Les lectures fonctionnent grâce à `_resolve_book_path()`, qui retraduit `/mnt/X/...` en
+`X:\...`, mais les **écritures** (upload) ne passent pas par cette traduction et créent
+des dossiers fantômes `I:\mnt\h\Books\...`. Corriger `BOOKS_ROOT` en `H:\Books` implique
+une migration des chemins des ~9500 livres en base.

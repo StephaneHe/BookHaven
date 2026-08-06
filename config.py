@@ -40,11 +40,19 @@ HOST = "0.0.0.0"
 PORT = int(os.environ.get("BOOKHAVEN_PORT", 8097))
 
 # Session secret
+_GENERATE_HINT = 'python -c "import secrets; print(secrets.token_hex(32))"'
+MIN_SECRET_KEY_LEN = 32
+
 SECRET_KEY = os.environ.get("BOOKHAVEN_SECRET_KEY", "")
 if not SECRET_KEY or SECRET_KEY == "bookhaven-dev-secret":
     raise RuntimeError(
         "BOOKHAVEN_SECRET_KEY must be set to a strong random value. "
-        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        f"Generate one with: {_GENERATE_HINT}"
+    )
+if len(SECRET_KEY) < MIN_SECRET_KEY_LEN:
+    raise RuntimeError(
+        f"BOOKHAVEN_SECRET_KEY is too short ({len(SECRET_KEY)} chars, "
+        f"minimum {MIN_SECRET_KEY_LEN}). Generate one with: {_GENERATE_HINT}"
     )
 
 # Scanner settings

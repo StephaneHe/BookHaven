@@ -51,6 +51,20 @@ def test_dev_secret_key_raises():
             del os.environ["BOOKHAVEN_SECRET_KEY"]
 
 
+def test_short_secret_key_raises():
+    backup = os.environ.get("BOOKHAVEN_SECRET_KEY")
+    os.environ["BOOKHAVEN_SECRET_KEY"] = "a" * 31
+    try:
+        with patch("dotenv.load_dotenv"):
+            with pytest.raises(RuntimeError, match="too short"):
+                import config
+    finally:
+        if backup is not None:
+            os.environ["BOOKHAVEN_SECRET_KEY"] = backup
+        elif "BOOKHAVEN_SECRET_KEY" in os.environ:
+            del os.environ["BOOKHAVEN_SECRET_KEY"]
+
+
 def test_strong_secret_key_ok():
     backup = os.environ.get("BOOKHAVEN_SECRET_KEY")
     os.environ["BOOKHAVEN_SECRET_KEY"] = "test-secret-key-32chars-minimum!"
