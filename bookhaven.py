@@ -37,7 +37,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "1.2.47"
+__version__ = "2.0.0"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -131,7 +131,7 @@ NO_COVER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="30
 </svg>'''
 
 def _resolve_book_path(path):
-    """Return the real filesystem path for a book.
+    r"""Return the real filesystem path for a book.
 
     Paths stored before the standalone migration used ``/books`` as the root.
     This function remaps those legacy paths to the current BOOKS_ROOT.

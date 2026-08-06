@@ -5,6 +5,31 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.0] - 2026-08-06
+
+Version majeure : le serveur **refuse désormais de démarrer** avec une configuration
+antérieure. Voir « Breaking » ci-dessous avant de mettre à jour.
+
+### Breaking
+- **`BOOKHAVEN_SECRET_KEY` obligatoire, 32 caractères minimum.** `config.py` lève une `RuntimeError` au démarrage si la clé est absente, trop courte, ou égale à l'ancienne valeur de développement `bookhaven-dev-secret`. Générer avec `python -c "import secrets; print(secrets.token_hex(32))"`.
+- **`BOOKS_ROOT` doit être un chemin Windows natif** (`H:\Books`) et non un chemin WSL (`/mnt/h/Books`).
+- **`docker-compose.yml` supprimé.** Le projet ne tourne plus sous Docker : processus Python standalone piloté par le Planificateur de tâches Windows (`BookHaven-server` + `BookHaven-watchdog`).
+
+### Security
+- **XSS en contexte d'attribut** : `esc()` passait par `textContent`/`innerHTML`, qui n'échappe pas les guillemets — toute valeur insérée dans un attribut restait injectable. `esc()` échappe maintenant aussi `"` et `'`, et une fonction `jsq()` a été ajoutée pour les gestionnaires inline, où le navigateur décode l'attribut avant que JS ne l'analyse. 8 sites corrigés (carte utilisateur, liens de série, édition de genre, suggestions d'auteur, fil d'Ariane, cartes de collection, badges de format). Les métadonnées de livre provenant de fichiers EPUB uploadés, elles sont contrôlables par un tiers.
+- **Traversée de répertoire à l'upload** : `dest_folder` est validé contre `LIBRARY_PATHS` avant tout accès disque, avec comparaison sur séparateur pour empêcher qu'un dossier voisin (`…\Books2`) satisfasse le préfixe de `…\Books`.
+- **Nom de fichier à l'upload** : composantes de chemin, caractères illégaux et noms réservés Windows neutralisés par `_safe_filename()`, qui préserve l'Unicode.
+- **epub.js** : `allowScriptedContent` passé à `false`.
+
+### Fixed
+- **Chemins de la bibliothèque migrés** de `/mnt/h/Books/...` (reliquat WSL/Docker) vers `H:\Books\...`. Les lectures fonctionnaient via `_resolve_book_path()`, mais les écritures contournaient cette traduction : les uploads créaient des dossiers fantômes (`I:\mnt\h\Books`, `C:\mnt\h\Books`) hors de la bibliothèque. 9511 lignes migrées, 4803 vignettes déplacées vers leur nouveau hash `md5(chemin)`, 9512/9512 chemins vérifiés présents sur disque. Outil : `scripts/migrate_books_root.py` (dry-run par défaut, sauvegarde et journal de correspondance).
+- **Isolation des tests** : `test_config.py` retirait `config` de `sys.modules` sans le restaurer ; `database.py` conservant une référence à l'objet d'origine, la redirection de `config.DB_PATH` d'un autre test était sans effet et celui-ci écrivait dans la base de production. Garde-fou ajouté dans `conftest.py`.
+- **`SyntaxWarning`** sur la docstring de `_resolve_book_path` (séquence d'échappement `\.`).
+
+### Added
+- `scripts/migrate_books_root.py` : migration des chemins, idempotente, dry-run par défaut.
+- Tests de sécurité : 28 cas couvrant la clé secrète, la traversée de répertoire, la sanitisation des noms de fichiers et la préservation de l'Unicode.
+
 ## [1.2.47] - 2026-08-04
 
 ### Fixed
