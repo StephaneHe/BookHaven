@@ -7,8 +7,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Logs
+# Logs (watchdog output, migration mapping files)
 *.log
+logs/
 
 # Environment / secrets
 .env
