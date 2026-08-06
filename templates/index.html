@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
@@ -1277,7 +1277,7 @@ async function showLogin() {
     const users = await r.json();
     const grid = document.getElementById('user-grid');
     grid.innerHTML = users.map(u => `
-      <div class="user-card" data-name="${esc(u.name)}" onclick="selectUser(this, ${JSON.stringify(u.name)})">
+      <div class="user-card" data-name="${esc(u.name)}" onclick="selectUser(this, this.dataset.name)">
         <div class="user-avatar">${esc(u.name[0].toUpperCase())}</div>
         <div class="name">${esc(u.name)}</div>
       </div>
