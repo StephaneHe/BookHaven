@@ -76,6 +76,19 @@ def test_path_traversal_windows_absolute(client, tmp_path):
     assert b"Invalid destination" in resp.data
 
 
+def test_path_traversal_sibling_folder(client, tmp_path):
+    """H:\\Books\\Books2 must not match LIBRARY_PATH H:\\Books\\Books (startswith bug)."""
+    c, lib_path = client
+    sibling = lib_path + "Evil"  # e.g. /tmp/xxx/BooksEvil — not in LIBRARY_PATHS
+    _insert_pending(tmp_path, lib_path, "uid-sib")
+    resp = c.post("/api/upload/confirm", json={
+        "upload_id": "uid-sib",
+        "dest_folder": sibling,
+    })
+    bookhaven._pending_uploads.pop("uid-sib", None)
+    assert resp.status_code == 400
+
+
 def test_path_traversal_dotdot(client, tmp_path):
     c, lib_path = client
     _insert_pending(tmp_path, lib_path, "uid-dot")

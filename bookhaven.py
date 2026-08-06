@@ -14,6 +14,7 @@ import mimetypes
 import traceback
 from functools import wraps
 from io import BytesIO
+from werkzeug.utils import secure_filename
 
 from flask import (
     Flask, request, jsonify, send_file, send_from_directory,
@@ -1890,7 +1891,6 @@ def api_upload_analyze():
     if not f.filename:
         return jsonify({"error": "No filename"}), 400
 
-    from werkzeug.utils import secure_filename
     filename = secure_filename(f.filename)
     if not filename:
         return jsonify({"error": "Invalid filename"}), 400
@@ -1960,6 +1960,20 @@ def api_upload_confirm():
     if not upload_id or upload_id not in _pending_uploads:
         return jsonify({"error": "Invalid or expired upload ID"}), 400
 
+    # Validate dest_folder BEFORE consuming the upload entry so the user can
+    # retry with a corrected path if validation fails.
+    pending = _pending_uploads[upload_id]
+    dest_folder = data.get('dest_folder') or pending['dest_folder']
+
+    abs_dest = os.path.normpath(os.path.abspath(dest_folder))
+    allowed = any(
+        abs_dest == os.path.normpath(os.path.abspath(p))
+        or abs_dest.startswith(os.path.normpath(os.path.abspath(p)) + os.sep)
+        for p in config.LIBRARY_PATHS
+    )
+    if not allowed:
+        return jsonify({"error": "Invalid destination folder"}), 400
+
     pending = _pending_uploads.pop(upload_id)
     temp_path = pending['temp_path']
 
@@ -1970,17 +1984,8 @@ def api_upload_confirm():
         if field in data:
             meta[field] = data[field]
 
-    dest_folder = data.get('dest_folder') or pending['dest_folder']
     filename = pending['filename']
     ext = pending['ext']
-
-    abs_dest = os.path.normpath(os.path.abspath(dest_folder))
-    allowed = any(
-        abs_dest.startswith(os.path.normpath(os.path.abspath(p)))
-        for p in config.LIBRARY_PATHS
-    )
-    if not allowed:
-        return jsonify({"error": "Invalid destination folder"}), 400
 
     try:
         os.makedirs(dest_folder, exist_ok=True)
