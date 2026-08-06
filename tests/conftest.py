@@ -12,6 +12,27 @@ SERVER_SCRIPT = r"H:\BookHaven\bookhaven.py"
 TEST_PORT = 8098
 BASE_URL = f"http://localhost:{TEST_PORT}"
 
+@pytest.fixture(autouse=True)
+def _config_module_identity():
+    """Fail loudly if a test leaves sys.modules['config'] diverged.
+
+    database.py and bookhaven.py hold a reference to the config module object
+    captured at their import. If a test replaces sys.modules['config'] with a
+    fresh object, a later test that monkeypatches config.DB_PATH patches only
+    the new object -- database.py keeps writing to the real library database.
+    That silently polluted data/bookhaven.db once already.
+    """
+    yield
+    import sys as _sys
+    cfg = _sys.modules.get("config")
+    db = _sys.modules.get("database")
+    if cfg is not None and db is not None:
+        assert db.config is cfg, (
+            "sys.modules['config'] diverged from database.config -- a test "
+            "replaced the config module and DB redirection will silently fail"
+        )
+
+
 PHONE = {"width": 375, "height": 667}
 TABLET = {"width": 768, "height": 1024}
 DESKTOP = {"width": 1280, "height": 800}

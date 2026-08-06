@@ -1419,7 +1419,7 @@ function onAuthorInput(val) {
     const matches = authors.filter(a => a.toLowerCase().includes(q)).slice(0, 5);
     if (matches.length === 0) { box.classList.remove('visible'); return; }
     box.innerHTML = matches.map(a =>
-      `<div class="author-suggestion" onmousedown="selectAuthor('${esc(a.replace(/'/g, "\\'"))}')">${esc(a)}</div>`
+      `<div class="author-suggestion" onmousedown="selectAuthor('${esc(jsq(a))}')">${esc(a)}</div>`
     ).join('');
     box.classList.add('visible');
   }, 150);
@@ -1490,7 +1490,7 @@ async function loadCategoryRows() {
       const cards = cat.books.map(b => {
         const fmts = b.formats || [{id: b.id, format: b.format}];
         const badges = fmts.map(f =>
-          `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${f.format.toUpperCase()}">${f.format}</span>`
+          `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${esc(f.format.toUpperCase())}">${esc(f.format)}</span>`
         ).join('');
         return `<div class="cat-card" onclick="showBookDetail(${b.id})">
           <img src="/api/books/${b.id}/cover?v=2" loading="lazy" onerror="this.style.opacity='0.3'">
@@ -1499,7 +1499,7 @@ async function loadCategoryRows() {
           <div class="cat-card-author">${esc(b.author)}</div>
         </div>`;
       }).join('');
-      const safeCat = cat.category.replace(/'/g, "\\'");
+      const safeCat = esc(jsq(cat.category));
       return `<div class="cat-section" draggable="true" data-category="${esc(cat.category)}">
         <div class="cat-header">
           <span class="drag-handle" title="Drag to reorder">☰</span>
@@ -1677,7 +1677,7 @@ async function loadBooks() {
 
     grid.innerHTML = data.items.map(item => {
       if (item.type === 'collection') {
-        const safePath = item.collection_path.replace(/'/g, "\\'");
+        const safePath = esc(jsq(item.collection_path));
         return `
         <div class="book-card collection-card" onclick="browseInto('${safePath}')">
           <span class="collection-badge">${item.book_count}</span>
@@ -1689,7 +1689,7 @@ async function loadBooks() {
       } else {
         const fmts = item.formats || [{id: item.id, format: item.format}];
         const badges = fmts.map(f =>
-          `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${f.format.toUpperCase()}">${f.format}</span>`
+          `<span class="format-badge" onclick="event.stopPropagation(); openBook(${f.id})" title="${esc(f.format.toUpperCase())}">${esc(f.format)}</span>`
         ).join('');
         return `
         <div class="book-card" onclick="showBookDetail(${item.id})">
@@ -1729,7 +1729,7 @@ function updateBreadcrumb() {
     html += '<span class="bc-sep"> / </span>';
     const path = parts.slice(0, i + 1).join('/');
     if (i < parts.length - 1) {
-      html += `<span class="bc-link" onclick="browseInto('${path.replace(/'/g, "\\'")}')">${esc(parts[i])}</span>`;
+      html += `<span class="bc-link" onclick="browseInto('${esc(jsq(path))}')">${esc(parts[i])}</span>`;
     } else {
       html += `<span class="bc-current">${esc(parts[i])}</span>`;
     }
@@ -1811,7 +1811,7 @@ async function showBookDetail(bookId) {
     row('Author', b.author);
     if (b.series) {
       const sl = b.series + (b.series_index ? ' #' + b.series_index : '');
-      const ss = b.series.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+      const ss = esc(jsq(b.series));
       html += '<span class="detail-meta-label">Series</span><span class="detail-meta-value">'
         + '<a href="#" class="series-link" onclick="closeDetail();browseInto(\'' + ss + '\');return false;">' + esc(sl) + '</a>'
         + ' <button class="ai-genre-btn" onclick="removeFromSeries(' + bookId + ')" title="Remove this book from the series">&times;</button>'
@@ -1821,7 +1821,7 @@ async function showBookDetail(bookId) {
     row('Category', b.category);
     html += '<span class="detail-meta-label">Genre</span><span class="detail-meta-value">'
       + '<span id="detail-genre-val">' + (genreTags || '<span style="color:#666">&mdash;</span>') + '</span>' + lockIcon
-      + ' <button class="ai-genre-btn" onclick="editGenre(' + bookId + ',\'' + esc(b.genre || '') + '\')" title="Edit">&#9998;</button>'
+      + ' <button class="ai-genre-btn" onclick="editGenre(' + bookId + ',\'' + esc(jsq(b.genre || '')) + '\')" title="Edit">&#9998;</button>'
       + '<button class="ai-genre-btn" onclick="classifyGenre(' + bookId + ')" title="AI genre">AI</button></span>';
     row('Format', b.format ? b.format.toUpperCase() : '');
     row('Pages', b.page_count);
@@ -2755,11 +2755,26 @@ function pollScan() {
 }
 
 // ── Helpers ─────────────────────────────────────────────────
+// Escapes for BOTH text and quoted-attribute contexts. The previous
+// textContent/innerHTML round-trip only escaped & < >, leaving quotes intact,
+// so any esc() output placed inside title="..." or data-x="..." could break
+// out of the attribute. Book metadata (title, series, genre) comes straight
+// from uploaded EPUB files, so it is attacker-controlled.
 function esc(s) {
   if (!s) return '';
-  const d = document.createElement('div');
-  d.textContent = s;
-  return d.innerHTML;
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Escapes a value for embedding inside a single-quoted JS string literal.
+// Must be composed as esc(jsq(x)) when the result lands in an inline handler:
+// the browser HTML-decodes the attribute before the JS parser sees it.
+function jsq(s) {
+  return String(s == null ? '' : s).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
 // ── T11+T12+T13: Touch Swipe Navigation + Tap Toggle ───────

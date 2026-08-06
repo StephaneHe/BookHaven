@@ -7,9 +7,23 @@ from unittest.mock import patch
 
 @pytest.fixture(autouse=True)
 def isolate_config():
+    """Re-import config in isolation, then put the ORIGINAL module object back.
+
+    Leaving config popped from sys.modules is not enough: modules that already
+    did `import config` (database.py, bookhaven.py) keep a reference to the old
+    object, while a later `import config` builds a new one. A test that then
+    monkeypatches config.DB_PATH patches the new object only -- database.py
+    still reads the old one and writes to the real library database.
+    """
+    saved = sys.modules.get("config")
     sys.modules.pop("config", None)
-    yield
-    sys.modules.pop("config", None)
+    try:
+        yield
+    finally:
+        if saved is not None:
+            sys.modules["config"] = saved
+        else:
+            sys.modules.pop("config", None)
 
 
 def test_missing_secret_key_raises():
