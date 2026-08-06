@@ -12,7 +12,10 @@ __pycache__/
 logs/
 
 # Environment / secrets
+# .env.bak* catches rotation backups, which still hold the previous secrets.
+# .env.example stays tracked on purpose.
 .env
+.env.bak*
 server.crt
 server.key
 
