@@ -998,8 +998,6 @@ td, th { padding: 4px 8px; border: 1px solid #ccc; }
         conn.commit()
         conn.close()
         return jsonify({"ok": True, "message": "EPUB optimized"})
-    except subprocess.TimeoutExpired:
-        return jsonify({"error": "Optimization timed out (max 5 min)"}), 504
     except Exception as e:
         logger.error(f"Error in optimize_epub: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal server error"}), 500
