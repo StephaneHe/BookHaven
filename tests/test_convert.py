@@ -102,6 +102,72 @@ def test_stale_convert_state():
     assert not convert_state["running"]
 
 
+def test_convert_timeout_is_effective(tmp_path):
+    """3.12 — proc.wait(timeout=600) was unreachable: the read(1) loop blocks
+    until EOF, so a hung Calibre was never killed. A watchdog must kill the
+    process after CONVERT_TIMEOUT_SECONDS and report a timeout."""
+    import threading
+    import time
+    from unittest.mock import MagicMock, patch
+
+    os.environ["BOOKHAVEN_TEST_MODE"] = "1"
+    import bookhaven
+
+    class FakeHungProc:
+        """Calibre that produces output forever and never exits on its own."""
+        last = None
+
+        def __init__(self, *args, **kwargs):
+            self.returncode = None
+            self.killed = threading.Event()
+            self.stdout = self
+            FakeHungProc.last = self
+
+        def read(self, n):
+            if self.killed.is_set():
+                return b""
+            time.sleep(0.01)
+            return b"."
+
+        def kill(self):
+            self.returncode = -9
+            self.killed.set()
+
+        def wait(self, timeout=None):
+            assert self.killed.wait(timeout=10), "wait() on a never-ending proc"
+            return self.returncode
+
+    bookhaven.convert_state.update({"running": False, "error": None,
+                                    "message": "", "started_at": 0})
+    book = {"id": 1, "path": "x.pdf", "filename": "x.pdf", "title": "T",
+            "author": "A", "genre": "", "format": "pdf", "page_count": 3}
+    mock_conn = MagicMock()
+    mock_conn.execute.return_value.fetchone.return_value = book
+
+    bookhaven.app.config["TESTING"] = True
+    with bookhaven.app.test_client() as client:
+        with client.session_transaction() as sess:
+            sess["user_id"] = "test"
+            sess["user_name"] = "test"
+        with patch.object(bookhaven.database, "get_db", return_value=mock_conn), \
+             patch.object(bookhaven, "CONVERT_TIMEOUT_SECONDS", 0.3), \
+             patch.object(bookhaven.subprocess, "Popen", FakeHungProc):
+            assert client.post("/api/books/1/convert-epub").status_code == 200
+            deadline = time.time() + 8
+            while time.time() < deadline and bookhaven.convert_state["running"]:
+                time.sleep(0.02)
+
+    try:
+        assert bookhaven.convert_state["running"] is False, "watchdog never fired"
+        assert FakeHungProc.last.killed.is_set(), "hung Calibre was not killed"
+        assert "timed out" in (bookhaven.convert_state["error"] or "").lower()
+    finally:
+        if FakeHungProc.last:
+            FakeHungProc.last.kill()  # unblock the leaked thread if RED
+        bookhaven.convert_state.update({"running": False, "error": None,
+                                        "message": "", "started_at": 0})
+
+
 if __name__ == "__main__":
     import pytest
     pytest.main([__file__, "-v"])

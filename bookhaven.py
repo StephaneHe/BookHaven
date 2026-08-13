@@ -806,6 +806,11 @@ def _fixup_epub_images(epub_path):
 
 convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None, "current_page": 0, "total_pages": 0, "started_at": 0}
 
+# Hard ceiling on one Calibre run. Enforced by a watchdog timer that kills the
+# process: the byte-by-byte stdout read loop blocks until EOF, so a plain
+# proc.wait(timeout=...) can never fire.
+CONVERT_TIMEOUT_SECONDS = 600
+
 
 _convert_start_lock = threading.Lock()
 
@@ -865,6 +870,20 @@ def api_convert_epub(book_id):
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                     bufsize=0, cwd=pdf_dir
                 )
+                # Watchdog: kill a hung Calibre so the read loop below (which
+                # blocks until EOF) cannot run unbounded.
+                timed_out = threading.Event()
+
+                def _kill_on_timeout():
+                    timed_out.set()
+                    try:
+                        proc.kill()
+                    except OSError:
+                        pass
+
+                watchdog = threading.Timer(CONVERT_TIMEOUT_SECONDS, _kill_on_timeout)
+                watchdog.daemon = True
+                watchdog.start()
                 # Read byte-by-byte to defeat Windows pipe buffering
                 buf = b""
                 while True:
@@ -890,7 +909,15 @@ def api_convert_epub(book_id):
                             pct_val = int(pct_match.group(1))
                             if pct_val > 1:
                                 convert_state["message"] = f"{pct_val}% processing..."
-                proc.wait(timeout=600)
+                try:
+                    proc.wait()
+                finally:
+                    watchdog.cancel()
+                if timed_out.is_set():
+                    convert_state["error"] = (
+                        f"Conversion timed out (max {CONVERT_TIMEOUT_SECONDS // 60} min)")
+                    convert_state["message"] = "Timed out"
+                    return
                 if proc.returncode != 0:
                     convert_state["error"] = "Conversion failed"
                     convert_state["message"] = "Failed"
@@ -926,10 +953,6 @@ def api_convert_epub(book_id):
                 c.close()
                 convert_state["epub_id"] = new_id
                 convert_state["message"] = "Done"
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                convert_state["error"] = "Conversion timed out (max 10 min)"
-                convert_state["message"] = "Timed out"
             except Exception as e:
                 # Detail goes to the log only; /api/convert/status serves this dict.
                 convert_state["error"] = "Conversion failed (see server log)"
