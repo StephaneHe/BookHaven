@@ -69,6 +69,36 @@ app.config["SESSION_COOKIE_HTTPONLY"] = True
 # Secure must stay opt-in or sessions would never be sent.
 app.config["SESSION_COOKIE_SECURE"] = os.environ.get("BOOKHAVEN_COOKIE_SECURE", "0") == "1"
 
+# Global security headers. The CSP is permissive where the readers require it:
+# inline handlers/scripts throughout index.html, and blob:/data: URLs used by
+# epub.js and pdf.js for images, workers and rendition iframes. It still
+# forbids loading script/style/media from any other origin.
+_GLOBAL_CSP = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data: blob:; "
+    "font-src 'self' data: blob:; "
+    "connect-src 'self' data: blob:; "
+    "worker-src 'self' blob:; "
+    "frame-src 'self' data: blob:; "
+    "media-src 'self' blob:; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "frame-ancestors 'self'"
+)
+
+
+@app.after_request
+def _security_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Referrer-Policy", "same-origin")
+    # setdefault: endpoints like /api/epub-resource set a stricter CSP themselves.
+    resp.headers.setdefault("Content-Security-Policy", _GLOBAL_CSP)
+    return resp
+
+
 # Test mode: bypass Jellyfin auth for automated testing
 TEST_MODE = os.environ.get("BOOKHAVEN_TEST_MODE", "0") == "1"
 if TEST_MODE:
