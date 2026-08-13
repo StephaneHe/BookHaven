@@ -221,23 +221,49 @@ def _like(term):
 # Scan state (simple in-memory tracking)
 scan_state = {"running": False, "current": 0, "total": 0, "message": "", "cancel": False}
 
-# Pending uploads awaiting confirmation (upload_id -> upload_info)
+# Pending uploads awaiting confirmation (upload_id -> upload_info).
+# Accessed from concurrent waitress worker threads: hold _pending_uploads_lock
+# around every read-modify-write.
 _pending_uploads = {}
+_pending_uploads_lock = threading.Lock()
 PENDING_UPLOAD_TTL = 3600  # seconds before an unconfirmed upload is discarded
+UPLOAD_TEMP_DIR = os.path.join(os.path.dirname(__file__), "data", "uploads")
 
 
 def _cleanup_pending_uploads(max_age=PENDING_UPLOAD_TTL):
     """Drop pending uploads older than max_age and delete their temp files."""
     now = time.time()
-    for uid in [u for u, p in _pending_uploads.items()
-                if now - p.get("created_at", 0) > max_age]:
-        pending = _pending_uploads.pop(uid, None)
-        if pending:
+    with _pending_uploads_lock:
+        expired = [(u, _pending_uploads.pop(u))
+                   for u in [u for u, p in _pending_uploads.items()
+                             if now - p.get("created_at", 0) > max_age]]
+    for uid, pending in expired:
+        try:
+            os.unlink(pending["temp_path"])
+        except OSError:
+            pass
+        logger.info(f"Expired pending upload {uid} ({pending.get('filename')})")
+
+
+def _purge_orphan_uploads(temp_dir=UPLOAD_TEMP_DIR):
+    """Delete temp files left in data/uploads by a previous run. Pending
+    uploads only live in memory, so after a restart any file not referenced
+    by _pending_uploads is an orphan. Returns the number of files removed."""
+    if not os.path.isdir(temp_dir):
+        return 0
+    with _pending_uploads_lock:
+        keep = {p["temp_path"] for p in _pending_uploads.values()}
+    removed = 0
+    for entry in os.scandir(temp_dir):
+        if entry.is_file() and entry.path not in keep:
             try:
-                os.unlink(pending["temp_path"])
+                os.unlink(entry.path)
+                removed += 1
             except OSError:
                 pass
-            logger.info(f"Expired pending upload {uid} ({pending.get('filename')})")
+    if removed:
+        logger.info(f"Purged {removed} orphaned upload temp file(s) from {temp_dir}")
+    return removed
 
 # No-cover SVG placeholder (served inline, no file needed)
 NO_COVER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
@@ -2171,7 +2197,7 @@ def api_upload_analyze():
         return jsonify({"error": f"Unsupported format '{ext}'. Allowed: {', '.join(sorted(config.SUPPORTED_FORMATS))}"}), 400
 
     # Save to a temp upload folder
-    temp_dir = os.path.join(os.path.dirname(__file__), 'data', 'uploads')
+    temp_dir = UPLOAD_TEMP_DIR
     os.makedirs(temp_dir, exist_ok=True)
     temp_id = str(uuid.uuid4())
     temp_path = os.path.join(temp_dir, temp_id + ext)
@@ -2200,14 +2226,15 @@ def api_upload_analyze():
         category, dest_folder, reason, is_new_folder = _determine_placement(meta, ext)
         meta['category'] = category
 
-        _pending_uploads[temp_id] = {
-            'temp_path': temp_path,
-            'filename': filename,
-            'ext': ext,
-            'meta': meta,
-            'dest_folder': dest_folder,
-            'created_at': time.time(),
-        }
+        with _pending_uploads_lock:
+            _pending_uploads[temp_id] = {
+                'temp_path': temp_path,
+                'filename': filename,
+                'ext': ext,
+                'meta': meta,
+                'dest_folder': dest_folder,
+                'created_at': time.time(),
+            }
 
         return jsonify({
             'upload_id': temp_id,
@@ -2239,12 +2266,12 @@ def api_upload_confirm():
     data = request.get_json()
     upload_id = data.get('upload_id')
 
-    if not upload_id or upload_id not in _pending_uploads:
-        return jsonify({"error": "Invalid or expired upload ID"}), 400
-
     # Validate dest_folder BEFORE consuming the upload entry so the user can
     # retry with a corrected path if validation fails.
-    pending = _pending_uploads[upload_id]
+    with _pending_uploads_lock:
+        pending = _pending_uploads.get(upload_id) if upload_id else None
+    if pending is None:
+        return jsonify({"error": "Invalid or expired upload ID"}), 400
     dest_folder = data.get('dest_folder') or pending['dest_folder']
 
     abs_dest = os.path.normpath(os.path.abspath(dest_folder))
@@ -2256,7 +2283,12 @@ def api_upload_confirm():
     if not allowed:
         return jsonify({"error": "Invalid destination folder"}), 400
 
-    pending = _pending_uploads.pop(upload_id)
+    # Atomic pop: a concurrent confirm/cancel may have consumed the entry
+    # while dest_folder was being validated.
+    with _pending_uploads_lock:
+        pending = _pending_uploads.pop(upload_id, None)
+    if pending is None:
+        return jsonify({"error": "Invalid or expired upload ID"}), 400
     temp_path = pending['temp_path']
 
     # Allow user to override any metadata field.
@@ -2389,8 +2421,11 @@ def api_upload_cancel():
     """Cancel a pending upload and delete the temp file."""
     data = request.get_json()
     upload_id = data.get('upload_id')
-    if upload_id and upload_id in _pending_uploads:
-        pending = _pending_uploads.pop(upload_id)
+    pending = None
+    if upload_id:
+        with _pending_uploads_lock:
+            pending = _pending_uploads.pop(upload_id, None)
+    if pending:
         try:
             os.unlink(pending['temp_path'])
         except Exception:
@@ -2453,6 +2488,9 @@ if __name__ == "__main__":
 
     # Create static img dir
     os.makedirs(os.path.join(app.static_folder, "img"), exist_ok=True)
+
+    # Temp files from uploads never confirmed before the last shutdown
+    _purge_orphan_uploads()
 
     # Start background media enrichment worker
     media_worker.start_worker()
