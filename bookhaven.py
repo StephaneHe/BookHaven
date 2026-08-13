@@ -340,6 +340,47 @@ def login_required(f):
 
 # ── API: Authentication ──────────────────────────────────────────────────────
 
+# Brute-force guard for the login PIN: BOOKHAVEN_PIN is a short numeric PIN,
+# so unlimited attempts from the LAN would fall in seconds. After
+# LOGIN_MAX_FAILURES failed PIN attempts from one IP, that IP is locked out
+# for LOGIN_LOCKOUT_SECONDS — even if it then supplies the correct PIN.
+LOGIN_MAX_FAILURES = 5
+LOGIN_LOCKOUT_SECONDS = 300
+_failed_logins = {}  # ip -> {"count": int, "locked_until": float}
+_failed_logins_lock = threading.Lock()
+
+
+def _login_blocked(ip):
+    with _failed_logins_lock:
+        entry = _failed_logins.get(ip)
+        if entry is None:
+            return False
+        if entry["locked_until"] > time.time():
+            return True
+        if entry["locked_until"]:
+            _failed_logins.pop(ip, None)  # lockout expired: start fresh
+        return False
+
+
+def _record_login_failure(ip):
+    with _failed_logins_lock:
+        entry = _failed_logins.setdefault(ip, {"count": 0, "locked_until": 0.0})
+        entry["count"] += 1
+        if entry["count"] >= LOGIN_MAX_FAILURES:
+            entry["locked_until"] = time.time() + LOGIN_LOCKOUT_SECONDS
+            logger.warning(
+                f"PIN lockout for {ip}: {entry['count']} failed attempts, "
+                f"blocked for {LOGIN_LOCKOUT_SECONDS}s")
+
+
+def _clear_login_failures(ip):
+    with _failed_logins_lock:
+        _failed_logins.pop(ip, None)
+
+
+_LOCKOUT_RESPONSE = ({"error": "Too many failed attempts, try again later"}, 429)
+
+
 def _check_pin(data):
     """Return True if the request satisfies the configured login PIN."""
     if not config.AUTH_PIN:
@@ -358,8 +399,12 @@ def api_pin_required():
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
     """Log in by selecting a user (PIN required if BOOKHAVEN_PIN is set)."""
+    ip = request.remote_addr or "unknown"
+    if config.AUTH_PIN and _login_blocked(ip):
+        return jsonify(_LOCKOUT_RESPONSE[0]), _LOCKOUT_RESPONSE[1]
     data = request.get_json()
     if not _check_pin(data):
+        _record_login_failure(ip)
         return jsonify({"error": "Invalid PIN"}), 403
     username = data.get("username", "")
 
@@ -369,6 +414,7 @@ def api_login():
         conn.close()
         return jsonify({"error": "User not found"}), 401
 
+    _clear_login_failures(ip)
     session["user_id"] = user["id"]
     session["user_name"] = user["name"]
     conn.close()
@@ -413,8 +459,13 @@ def api_users():
 @app.route("/api/auth/users", methods=["POST"])
 def api_create_user():
     """Create a new user (PIN required if BOOKHAVEN_PIN is set)."""
+    # Same PIN oracle as /api/auth/login: must share the same lockout.
+    ip = request.remote_addr or "unknown"
+    if config.AUTH_PIN and _login_blocked(ip):
+        return jsonify(_LOCKOUT_RESPONSE[0]), _LOCKOUT_RESPONSE[1]
     data = request.get_json()
     if not _check_pin(data):
+        _record_login_failure(ip)
         return jsonify({"error": "Invalid PIN"}), 403
     name = data.get("name", "").strip()
     if not name:
