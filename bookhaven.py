@@ -881,7 +881,8 @@ def api_convert_epub(book_id):
                 convert_state["error"] = "Conversion timed out (max 10 min)"
                 convert_state["message"] = "Timed out"
             except Exception as e:
-                convert_state["error"] = str(e)
+                # Detail goes to the log only; /api/convert/status serves this dict.
+                convert_state["error"] = "Conversion failed (see server log)"
                 convert_state["message"] = "Failed"
                 logger.error(f"Convert error: {e}\n{traceback.format_exc()}")
             finally:
@@ -1506,7 +1507,8 @@ def api_scan():
         except InterruptedError:
             scan_state["message"] = "Scan cancelled"
         except Exception as e:
-            scan_state["message"] = f"Error: {e}"
+            # Detail goes to the log only; /api/scan/status serves this dict.
+            scan_state["message"] = "Error: scan failed (see server log)"
             logger.error(f"Scan error: {e}\n{traceback.format_exc()}")
         finally:
             scan_state["running"] = False
