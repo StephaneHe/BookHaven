@@ -178,6 +178,18 @@ def _safe_filename(name):
         name = "_" + name
     return name[:200]
 
+MAX_PER_PAGE = 200
+
+
+def _int_arg(name, default, lo, hi):
+    """Read an int query arg, falling back to default and clamping to [lo, hi]."""
+    try:
+        val = int(request.args.get(name, default))
+    except (TypeError, ValueError):
+        val = default
+    return max(lo, min(hi, val))
+
+
 def _like(term):
     r"""Build a %term% LIKE pattern with user wildcards escaped.
 
@@ -435,8 +447,8 @@ def api_books():
         fmt = request.args.get("format", "")
         search = request.args.get("search", "")
         sort = request.args.get("sort", "title")
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 50))
+        page = _int_arg("page", 1, 1, 1000000)
+        per_page = _int_arg("per_page", 50, 1, MAX_PER_PAGE)
 
         query = "SELECT * FROM books WHERE 1=1"
         params = []
@@ -1483,8 +1495,8 @@ def api_books_grouped():
         fmt = request.args.get("format", "")
         search = request.args.get("search", "")
         prefix = request.args.get("prefix", "")  # Collection path prefix to browse into
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 50))
+        page = _int_arg("page", 1, 1, 1000000)
+        per_page = _int_arg("per_page", 50, 1, MAX_PER_PAGE)
 
         # Build WHERE clause for filters
         where_parts = []
@@ -1663,7 +1675,7 @@ def api_books_grouped():
 def api_books_recent():
     """Return the N most recently added books."""
     try:
-        n = int(request.args.get("n", 10))
+        n = _int_arg("n", 10, 1, 100)
         conn = database.get_db()
         rows = conn.execute(
             "SELECT * FROM books ORDER BY added_at DESC, id DESC LIMIT ?", (n,)
@@ -1683,7 +1695,7 @@ def api_books_recent():
 def api_books_recent_by_category():
     """Return the N most recently added books per category."""
     try:
-        n = int(request.args.get("n", 10))
+        n = _int_arg("n", 10, 1, 100)
         conn = database.get_db()
 
         # Get categories ordered by total book count (largest first)
@@ -1758,8 +1770,8 @@ def api_collections():
         category = request.args.get("category", "")
         genre = request.args.get("genre", "")
         search = request.args.get("search", "")
-        page = int(request.args.get("page", 1))
-        per_page = int(request.args.get("per_page", 50))
+        page = _int_arg("page", 1, 1, 1000000)
+        per_page = _int_arg("per_page", 50, 1, MAX_PER_PAGE)
 
         where = "WHERE b.series != ''"
         params = []
