@@ -265,36 +265,6 @@ def _base_filename(filename):
     return re.sub(r'\.(epub|pdf|cbr|cbz|mobi)$', '', filename, flags=re.IGNORECASE)
 
 
-def _group_format_variants(books):
-    """Group books by base filename + parent folder. Returns deduplicated list with formats array."""
-    FORMAT_PRIORITY = {'epub': 0, 'cbz': 1, 'cbr': 2, 'pdf': 3, 'mobi': 4}
-    groups = {}
-    for b in books:
-        base = _base_filename(b['filename'])
-        # Use grandparent folder to group sibling folders (CBR/ and PDF/ under same parent)
-        path = b.get('path', '')
-        parent = os.path.dirname(path)
-        grandparent = os.path.dirname(parent)
-        key = (base, grandparent)
-        if key not in groups:
-            groups[key] = []
-        groups[key].append(b)
-
-    result = []
-    for key, variants in groups.items():
-        variants.sort(key=lambda v: FORMAT_PRIORITY.get(v['format'], 9))
-        primary = dict(variants[0])
-        primary['formats'] = [{'id': v['id'], 'format': v['format']} for v in variants]
-        result.append(primary)
-    return result
-
-
-
-def _base_filename(filename):
-    """Strip extension to get base filename for grouping multi-format variants."""
-    return re.sub(r'\.(epub|pdf|cbr|cbz|mobi)$', '', filename, flags=re.IGNORECASE)
-
-
 FORMAT_PRIORITY = {'epub': 0, 'cbz': 1, 'cbr': 2, 'pdf': 3, 'mobi': 4}
 
 
