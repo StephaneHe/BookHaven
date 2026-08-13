@@ -29,6 +29,20 @@ def test_run_server_uses_waitress_without_tls():
     flask_run.assert_not_called()
 
 
+def test_waitress_body_size_matches_upload_cap():
+    """3.8 — waitress default max_request_body_size (~1 GB) spools the whole
+    body to disk before Flask's 512 MB cap can reject it: align both caps."""
+    calls = {}
+
+    def fake_serve(app, **kwargs):
+        calls.update(kwargs)
+
+    with patch("waitress.serve", fake_serve):
+        bookhaven._run_server(ssl_ctx=None)
+
+    assert calls.get("max_request_body_size") == config.MAX_UPLOAD_BYTES
+
+
 def test_run_server_refuses_tls():
     """3.7 — server.crt/server.key used to silently re-route serving through
     the Werkzeug dev server, undoing the waitress fix. Startup must refuse

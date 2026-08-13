@@ -2415,7 +2415,10 @@ def _run_server(ssl_ctx=None):
         logger.warning("waitress not installed — falling back to Flask dev server")
         app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True)
         return
-    waitress.serve(app, host=config.HOST, port=config.PORT, threads=8)
+    # Align waitress's cap with Flask's MAX_CONTENT_LENGTH: by default
+    # waitress accepts ~1 GB and spools it to disk before Flask can say 413.
+    waitress.serve(app, host=config.HOST, port=config.PORT, threads=8,
+                   max_request_body_size=config.MAX_UPLOAD_BYTES)
 
 
 if __name__ == "__main__":
