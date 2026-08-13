@@ -12,6 +12,14 @@ import bookhaven  # noqa: E402
 import config     # noqa: E402
 
 
+@pytest.fixture(autouse=True)
+def reset_limiter():
+    """Failed-PIN attempts here must not trip the brute-force lockout."""
+    bookhaven._failed_logins.clear()
+    yield
+    bookhaven._failed_logins.clear()
+
+
 @pytest.fixture()
 def client():
     bookhaven.app.config["TESTING"] = True
@@ -51,6 +59,20 @@ def test_create_user_requires_pin_when_set(client):
     with patch.object(config, "AUTH_PIN", "4321"):
         resp = client.post("/api/auth/users", json={"name": "Mallory"})
     assert resp.status_code == 403
+
+
+def test_non_ascii_pin_rejected_not_500(client):
+    """hmac.compare_digest raises TypeError on non-ASCII str -> was a 500."""
+    with patch.object(config, "AUTH_PIN", "4321"):
+        resp = client.post("/api/auth/login", json={"username": "Steph", "pin": "12é4"})
+    assert resp.status_code == 403
+
+
+def test_non_string_pin_rejected_not_500(client):
+    with patch.object(config, "AUTH_PIN", "4321"):
+        for bad in ({"a": 1}, ["4", "3"], 4321, None, True):
+            resp = client.post("/api/auth/login", json={"username": "Steph", "pin": bad})
+            assert resp.status_code == 403, f"pin={bad!r}"
 
 
 def test_pin_required_endpoint(client):

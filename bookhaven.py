@@ -386,8 +386,13 @@ def _check_pin(data):
     if not config.AUTH_PIN:
         return True
     import hmac
-    supplied = str((data or {}).get("pin", ""))
-    return hmac.compare_digest(supplied, config.AUTH_PIN)
+    pin = (data or {}).get("pin", "")
+    if not isinstance(pin, str):
+        return False
+    # Compare as bytes: compare_digest raises TypeError on non-ASCII str.
+    supplied = pin.encode("utf-8")
+    expected = str(config.AUTH_PIN).encode("utf-8")
+    return hmac.compare_digest(supplied, expected)
 
 
 @app.route("/api/auth/pin-required")
