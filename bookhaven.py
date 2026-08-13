@@ -60,6 +60,7 @@ logger = logging.getLogger("bookhaven")
 app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = config.SECRET_KEY
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_BYTES
 
 # Test mode: bypass Jellyfin auth for automated testing
 TEST_MODE = os.environ.get("BOOKHAVEN_TEST_MODE", "0") == "1"
@@ -1111,15 +1112,14 @@ def api_book_file(book_id):
         "mobi": "application/x-mobipocket-ebook",
     }
     mimetype = mime_map.get(book["format"], "application/octet-stream")
-    # Pre-read into BytesIO so the H: drive (network mount) is fully read before the HTTP
-    # response starts — prevents the browser receiving a truncated zip on slow drives.
+    # Stream from disk (werkzeug reads in chunks and answers Range requests);
+    # the previous full read into BytesIO put entire comics in RAM per request.
     try:
-        with open(resolved_path, "rb") as f:
-            data = f.read()
-    except OSError as e:
-        abort(500, description=str(e))
-    from io import BytesIO
-    return send_file(BytesIO(data), mimetype=mimetype, download_name=book["filename"])
+        return send_file(resolved_path, mimetype=mimetype,
+                         download_name=book["filename"], conditional=True)
+    except OSError:
+        logger.error(f"Cannot read book file {resolved_path}", exc_info=True)
+        abort(500)
 
 
 # MIME types an EPUB resource may be served inline with. Everything else is

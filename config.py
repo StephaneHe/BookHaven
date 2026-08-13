@@ -55,6 +55,10 @@ if len(SECRET_KEY) < MIN_SECRET_KEY_LEN:
         f"minimum {MIN_SECRET_KEY_LEN}). Generate one with: {_GENERATE_HINT}"
     )
 
+# Upload/request size cap in MB (Flask MAX_CONTENT_LENGTH). Large comics can
+# reach a few hundred MB; bump BOOKHAVEN_MAX_UPLOAD_MB if a legit file is refused.
+MAX_UPLOAD_BYTES = int(os.environ.get("BOOKHAVEN_MAX_UPLOAD_MB", "512")) * 1024 * 1024
+
 # Optional login PIN. BookHaven binds on HOST (default 0.0.0.0) so any device
 # on the LAN can reach it; user selection alone is passwordless. Set
 # BOOKHAVEN_PIN in .env to require this shared PIN at login/user creation.
