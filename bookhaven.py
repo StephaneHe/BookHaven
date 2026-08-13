@@ -47,12 +47,17 @@ if HAS_RARFILE:
         rarfile.UNRAR_TOOL = _cfg.UNRAR_TOOL
 
 # ── Logging ──────────────────────────────────────────────────────────────────
+from logging.handlers import RotatingFileHandler
+_log_file_handler = RotatingFileHandler(
+    os.path.join(os.path.dirname(__file__), "bookhaven.log"),
+    maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8",
+)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler(os.path.join(os.path.dirname(__file__), "bookhaven.log"), encoding="utf-8"),
+        _log_file_handler,
     ]
 )
 logger = logging.getLogger("bookhaven")
