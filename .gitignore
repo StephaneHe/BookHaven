@@ -1,6 +1,17 @@
 # Data & cache (generated at runtime)
 data/
 cache/
+*.db
+
+# Python virtual env
+.venv/
+venv/
+
+# Backups (rotation dumps, pre-change snapshots)
+backup/
+
+# Build artifacts
+*.apk
 
 # Python
 __pycache__/
