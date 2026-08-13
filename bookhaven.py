@@ -1345,6 +1345,9 @@ def api_epub_resource(book_id, resource_path):
 
 
 EPUB_LOC_CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cache", "epub_locations")
+# epub.js locations JSON is typically tens of KB; 2 MB is a generous ceiling
+# that stops the endpoint being used as an unbounded disk-filler.
+MAX_EPUB_LOCATIONS_BYTES = 2 * 1024 * 1024
 
 
 @app.route("/api/books/<int:book_id>/epub-locations", methods=["GET"])
@@ -1365,6 +1368,13 @@ def api_put_epub_locations(book_id):
     data = request.get_json(silent=True)
     if not data or not isinstance(data.get("locations"), str):
         abort(400)
+    if len(data["locations"]) > MAX_EPUB_LOCATIONS_BYTES:
+        abort(413)
+    conn = database.get_db()
+    book = conn.execute("SELECT id FROM books WHERE id = ?", (book_id,)).fetchone()
+    conn.close()
+    if not book:
+        abort(404)
     os.makedirs(EPUB_LOC_CACHE_DIR, exist_ok=True)
     path = os.path.join(EPUB_LOC_CACHE_DIR, f"{book_id}.json")
     with open(path, "w", encoding="utf-8") as f:
