@@ -61,6 +61,13 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = config.SECRET_KEY
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_BYTES
+# SameSite=Lax stops cross-site form POSTs (e.g. against /api/upload/analyze)
+# from carrying the session cookie — the practical CSRF vector here.
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+# Server runs plain HTTP on the LAN unless server.crt/server.key exist, so
+# Secure must stay opt-in or sessions would never be sent.
+app.config["SESSION_COOKIE_SECURE"] = os.environ.get("BOOKHAVEN_COOKIE_SECURE", "0") == "1"
 
 # Test mode: bypass Jellyfin auth for automated testing
 TEST_MODE = os.environ.get("BOOKHAVEN_TEST_MODE", "0") == "1"
