@@ -172,6 +172,16 @@ def _safe_filename(name):
         name = "_" + name
     return name[:200]
 
+def _like(term):
+    r"""Build a %term% LIKE pattern with user wildcards escaped.
+
+    Use together with LIKE ? ESCAPE '\' so % and _ typed by the user match
+    literally instead of acting as wildcards.
+    """
+    escaped = term.replace("\\", "\\\\").replace("%", r"\%").replace("_", r"\_")
+    return f"%{escaped}%"
+
+
 # Scan state (simple in-memory tracking)
 scan_state = {"running": False, "current": 0, "total": 0, "message": "", "cancel": False}
 
@@ -444,17 +454,18 @@ def api_books():
             query += " AND category = ?"
             params.append(category)
         if genre:
-            query += " AND genre LIKE ?"
-            params.append(f"%{genre}%")
+            query += " AND genre LIKE ? ESCAPE '\\'"
+            params.append(_like(genre))
         if author:
-            query += " AND author LIKE ?"
-            params.append(f"%{author}%")
+            query += " AND author LIKE ? ESCAPE '\\'"
+            params.append(_like(author))
         if fmt:
             query += " AND format = ?"
             params.append(fmt)
         if search:
-            query += " AND (title LIKE ? OR author LIKE ? OR series LIKE ?)"
-            params.extend([f"%{search}%"] * 3)
+            query += (" AND (title LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\'"
+                      " OR series LIKE ? ESCAPE '\\')")
+            params.extend([_like(search)] * 3)
 
         # Count total
         count_query = query.replace("SELECT *", "SELECT COUNT(*)")
@@ -1492,17 +1503,19 @@ def api_books_grouped():
             where_parts.append("category = ?")
             params.append(category)
         if genre:
-            where_parts.append("genre LIKE ?")
-            params.append(f"%{genre}%")
+            where_parts.append("genre LIKE ? ESCAPE '\\'")
+            params.append(_like(genre))
         if author:
-            where_parts.append("author LIKE ?")
-            params.append(f"%{author}%")
+            where_parts.append("author LIKE ? ESCAPE '\\'")
+            params.append(_like(author))
         if fmt:
             where_parts.append("format = ?")
             params.append(fmt)
         if search:
-            where_parts.append("(title LIKE ? OR author LIKE ? OR series LIKE ? OR collection_path LIKE ?)")
-            params.extend([f"%{search}%"] * 4)
+            where_parts.append(
+                "(title LIKE ? ESCAPE '\\' OR author LIKE ? ESCAPE '\\'"
+                " OR series LIKE ? ESCAPE '\\' OR collection_path LIKE ? ESCAPE '\\')")
+            params.extend([_like(search)] * 4)
 
         where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
 
@@ -1764,11 +1777,11 @@ def api_collections():
             where += " AND b.category = ?"
             params.append(category)
         if genre:
-            where += " AND b.genre LIKE ?"
-            params.append(f"%{genre}%")
+            where += " AND b.genre LIKE ? ESCAPE '\\'"
+            params.append(_like(genre))
         if search:
-            where += " AND (b.series LIKE ? OR b.author LIKE ?)"
-            params.extend([f"%{search}%"] * 2)
+            where += " AND (b.series LIKE ? ESCAPE '\\' OR b.author LIKE ? ESCAPE '\\')"
+            params.extend([_like(search)] * 2)
 
         # Count distinct series
         count_q = f"SELECT COUNT(DISTINCT b.series) FROM books b {where}"
