@@ -54,6 +54,7 @@ def server():
     # Kill any lingering python processes on test port
     env = os.environ.copy()
     env["BOOKHAVEN_TEST_MODE"] = "1"
+    env["BOOKHAVEN_ENV"] = "development"
     env["BOOKHAVEN_PORT"] = str(TEST_PORT)
     proc = subprocess.Popen(
         [PYTHON, SERVER_SCRIPT],

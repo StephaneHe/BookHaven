@@ -5,6 +5,7 @@ from unittest.mock import patch
 
 os.environ.setdefault("BOOKHAVEN_SECRET_KEY", "test-secret-key-32chars-minimum!")
 os.environ.setdefault("BOOKHAVEN_TEST_MODE", "1")
+os.environ.setdefault("BOOKHAVEN_ENV", "development")
 
 import bookhaven  # noqa: E402
 

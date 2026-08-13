@@ -99,8 +99,25 @@ def _security_headers(resp):
     return resp
 
 
-# Test mode: bypass Jellyfin auth for automated testing
-TEST_MODE = os.environ.get("BOOKHAVEN_TEST_MODE", "0") == "1"
+# Test mode: bypass auth for automated testing. Guarded so a stray
+# BOOKHAVEN_TEST_MODE=1 in a production environment fails loudly at startup
+# instead of silently disabling authentication.
+_DEV_ENVS = ("dev", "development", "test", "testing")
+
+
+def _resolve_test_mode(environ):
+    if environ.get("BOOKHAVEN_TEST_MODE", "0") != "1":
+        return False
+    if environ.get("BOOKHAVEN_ENV", "").lower() not in _DEV_ENVS:
+        raise RuntimeError(
+            "BOOKHAVEN_TEST_MODE=1 requested but BOOKHAVEN_ENV is not a dev "
+            "environment. Set BOOKHAVEN_ENV=development to allow the auth "
+            "bypass, or unset BOOKHAVEN_TEST_MODE."
+        )
+    return True
+
+
+TEST_MODE = _resolve_test_mode(os.environ)
 if TEST_MODE:
     logger.warning("** TEST MODE ACTIVE - auth bypass enabled **")
 

@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 # Must be set BEFORE importing app/config
 os.environ.setdefault("BOOKHAVEN_SECRET_KEY", "test-secret-key-32chars-minimum!")
 os.environ.setdefault("BOOKHAVEN_TEST_MODE", "1")
+os.environ.setdefault("BOOKHAVEN_ENV", "development")
 
 import bookhaven  # noqa: E402
 import config     # noqa: E402
