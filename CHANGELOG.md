@@ -5,6 +5,30 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.2.0] - 2026-08-14
+
+Seconde passe de remédiation TDD (revue critique n°2). Le PIN `BOOKHAVEN_PIN`
+étant désormais actif en production, la priorité est la protection du login.
+Chaque correctif est couvert par des tests dans `tests/`.
+
+### Security
+- **Anti brute-force sur le PIN** : 5 échecs de PIN depuis une même IP verrouillent `/api/auth/login` **et** `POST /api/auth/users` (même oracle) pendant 5 min (HTTP 429), même avec le bon PIN ensuite. Compteur remis à zéro après connexion réussie. Indispensable : un PIN 4 chiffres se brute-force en secondes depuis le LAN.
+- **`_check_pin` ne crashe plus (500) sur un PIN non-ASCII ou d'un type inattendu** : comparaison à temps constant sur octets UTF-8, valeurs non-chaîne rejetées.
+- **Session régénérée au login** (`session.clear()` avant pose de `user_id`) : anti fixation de session.
+- **`/api/scan/status` et `/api/convert/status` ne fuient plus `str(e)`** : message générique côté client, détail en log serveur uniquement.
+- **`PUT /api/books/<id>/epub-locations` borné** : payload limité à 2 Mo (413) et le livre doit exister en base (404) — c'était une écriture disque arbitraire et répétable jusqu'à 512 Mo par requête.
+- **TLS in-process refusé au démarrage** : la présence de `server.crt`/`server.key` rebasculait silencieusement sur le serveur de dev Werkzeug (annulant le fix waitress). Le serveur refuse désormais de démarrer avec un message clair : terminer le TLS dans un reverse proxy.
+- **waitress `max_request_body_size` aligné sur `BOOKHAVEN_MAX_UPLOAD_MB`** : par défaut waitress spoolait jusqu'à ~1 Go sur disque avant que Flask ne rejette à 512 Mo.
+
+### Fixed
+- **Races TOCTOU sur les flags `running`** (`/api/scan`, `/api/books/<id>/convert-epub`, `/api/enrichment/start`) : test-and-set sous `threading.Lock` avant de lancer le thread — deux POST rapprochés pouvaient lancer deux workers concurrents (ex. deux Calibre sur le même fichier). Le flag est libéré si les pré-vérifications échouent ou si le worker crashe.
+- **Timeout de conversion Calibre effectif** : `proc.wait(timeout=600)` était inatteignable (la boucle de lecture bloque jusqu'à EOF) ; un watchdog `threading.Timer` tue désormais le process après 10 min.
+- **`_pending_uploads` protégé par lock** (threads waitress : un double pop concurrent provoquait un 500) et **purge au démarrage des fichiers temporaires orphelins** dans `data/uploads`.
+- **`server.log` borné** : le handler stdout ne laisse passer que WARNING+ quand stdout est redirigé (le détail INFO reste dans `bookhaven.log` qui tourne), et `start-server.cmd` fait tourner `server.log`/`server_err.log` en `.1` à chaque lancement.
+
+### Removed
+- Handler mort `except subprocess.TimeoutExpired` dans `api_optimize_epub` (aucun subprocess appelé).
+
 ## [2.1.0] - 2026-08-13
 
 Release de sécurité (passe de remédiation TDD post-audit) : chaque correctif est
