@@ -467,7 +467,7 @@ def api_books():
         })
     except Exception as e:
         logger.error(f"Error in api_books: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/books/<int:book_id>")
@@ -497,7 +497,7 @@ def api_book_detail(book_id):
         return jsonify(result)
     except Exception as e:
         logger.error(f"Error in api_book_detail: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 def _fixup_epub_images(epub_path):
@@ -802,7 +802,7 @@ def api_convert_epub(book_id):
         return jsonify({"ok": True, "message": "Conversion started"})
     except Exception as e:
         logger.error(f"Error in convert_epub: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/convert/status")
@@ -857,7 +857,7 @@ td, th { padding: 4px 8px; border: 1px solid #ccc; }
         return jsonify({"error": "Optimization timed out (max 5 min)"}), 504
     except Exception as e:
         logger.error(f"Error in optimize_epub: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/books/<int:book_id>/genre", methods=["PUT"])
@@ -877,7 +877,7 @@ def api_set_genre(book_id):
         return jsonify({"ok": True, "genre": genre})
     except Exception as e:
         logger.error(f"Error in set_genre: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/books/<int:book_id>/series", methods=["DELETE"])
@@ -895,7 +895,7 @@ def api_remove_book_series(book_id):
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error in remove_book_series: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/series", methods=["DELETE"])
@@ -918,7 +918,7 @@ def api_delete_series():
         return jsonify({"ok": True, "affected": affected})
     except Exception as e:
         logger.error(f"Error in delete_series: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/books/<int:book_id>/classify-genre", methods=["POST"])
@@ -947,7 +947,7 @@ def api_classify_genre(book_id):
         return jsonify({"genre": genre})
     except Exception as e:
         logger.error(f"Error in classify_genre: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/filters")
@@ -1048,7 +1048,7 @@ def api_delete_progress(book_id):
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error in api_delete_progress: {e}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/books/<int:book_id>/progress", methods=["PUT"])
@@ -1073,7 +1073,7 @@ def api_set_progress(book_id):
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error in api_set_progress: {e}\n{traceback.format_exc()}")
-        return jsonify({"ok": False, "error": str(e)}), 500
+        return jsonify({"ok": False, "error": "Internal server error"}), 500
 
 
 @app.route("/api/continue-reading")
@@ -1633,7 +1633,7 @@ def api_books_grouped():
         })
     except Exception as e:
         logger.error(f"Error in api_books_grouped: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 
@@ -1808,7 +1808,7 @@ def api_collections():
         })
     except Exception as e:
         logger.error(f"Error in api_collections: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/collections/<path:series_name>")
@@ -1894,7 +1894,7 @@ def api_collection_detail(series_name):
             return jsonify({"series": series_name, "books": books, "total": len(books), "type": "books"})
     except Exception as e:
         logger.error(f"Error in api_collection_detail: {e}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 
@@ -2059,7 +2059,7 @@ def api_upload_analyze():
         except Exception:
             pass
         logger.error(f"Upload analyze error: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/upload/confirm", methods=["POST"])
@@ -2153,7 +2153,7 @@ def api_upload_confirm():
             except Exception:
                 pass
         logger.error(f"Upload confirm error: {e}\n{traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": "Internal server error"}), 500
 
 
 @app.route("/api/upload/suggest-path")
