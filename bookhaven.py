@@ -1117,6 +1117,7 @@ def api_continue_reading():
 # ── API: File Serving ────────────────────────────────────────────────────────
 
 @app.route("/api/books/<int:book_id>/cover")
+@login_required
 def api_book_cover(book_id):
     """Serve book cover image."""
     try:
@@ -1918,8 +1919,9 @@ def api_collection_detail(series_name):
 # ── API: Media Enrichment ────────────────────────────────────────────────────
 
 @app.route("/api/enrichment/status")
+@login_required
 def api_enrichment_status():
-    """Get media enrichment worker status. No auth required (read-only)."""
+    """Get media enrichment worker status."""
     return jsonify(media_worker.get_status())
 
 
