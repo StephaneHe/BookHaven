@@ -272,10 +272,27 @@ def login_required(f):
 
 # ── API: Authentication ──────────────────────────────────────────────────────
 
+def _check_pin(data):
+    """Return True if the request satisfies the configured login PIN."""
+    if not config.AUTH_PIN:
+        return True
+    import hmac
+    supplied = str((data or {}).get("pin", ""))
+    return hmac.compare_digest(supplied, config.AUTH_PIN)
+
+
+@app.route("/api/auth/pin-required")
+def api_pin_required():
+    """Tell the login page whether a PIN field must be shown."""
+    return jsonify({"pin_required": bool(config.AUTH_PIN)})
+
+
 @app.route("/api/auth/login", methods=["POST"])
 def api_login():
-    """Log in by selecting a user (no password required)."""
+    """Log in by selecting a user (PIN required if BOOKHAVEN_PIN is set)."""
     data = request.get_json()
+    if not _check_pin(data):
+        return jsonify({"error": "Invalid PIN"}), 403
     username = data.get("username", "")
 
     conn = database.get_db()
@@ -327,8 +344,10 @@ def api_users():
 
 @app.route("/api/auth/users", methods=["POST"])
 def api_create_user():
-    """Create a new user."""
+    """Create a new user (PIN required if BOOKHAVEN_PIN is set)."""
     data = request.get_json()
+    if not _check_pin(data):
+        return jsonify({"error": "Invalid PIN"}), 403
     name = data.get("name", "").strip()
     if not name:
         return jsonify({"error": "Name is required"}), 400

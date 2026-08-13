@@ -914,6 +914,10 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   <div class="login-box">
     <h1>📚 BookHaven</h1>
     <p class="subtitle">Select your profile</p>
+    <div class="field" id="pin-field" style="display:none">
+      <label>PIN</label>
+      <input type="password" id="login-pin" placeholder="Enter PIN" inputmode="numeric" autocomplete="off">
+    </div>
     <div id="user-grid" class="user-grid"></div>
     <div class="field" style="margin-top:16px">
       <label>Or create a new account</label>
@@ -1270,8 +1274,18 @@ async function checkAuth() {
   showLogin();
 }
 
+function loginPin() {
+  const el = document.getElementById('login-pin');
+  return el ? el.value : '';
+}
+
 async function showLogin() {
   showView('login-view');
+  try {
+    const r = await fetch('/api/auth/pin-required');
+    const d = await r.json();
+    document.getElementById('pin-field').style.display = d.pin_required ? '' : 'none';
+  } catch(e) {}
   try {
     const r = await fetch('/api/auth/users');
     const users = await r.json();
@@ -1304,7 +1318,7 @@ async function createUser() {
     const r = await fetch('/api/auth/users', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, pin: loginPin() }),
     });
     const data = await r.json();
     if (r.ok) {
@@ -1329,7 +1343,7 @@ async function doLogin(username) {
     const r = await fetch('/api/auth/login', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({ username: name })
+      body: JSON.stringify({ username: name, pin: loginPin() })
     });
     const data = await r.json();
     if (r.ok && data.ok) {

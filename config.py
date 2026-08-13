@@ -55,6 +55,12 @@ if len(SECRET_KEY) < MIN_SECRET_KEY_LEN:
         f"minimum {MIN_SECRET_KEY_LEN}). Generate one with: {_GENERATE_HINT}"
     )
 
+# Optional login PIN. BookHaven binds on HOST (default 0.0.0.0) so any device
+# on the LAN can reach it; user selection alone is passwordless. Set
+# BOOKHAVEN_PIN in .env to require this shared PIN at login/user creation.
+# Empty = disabled (current behaviour, documented trade-off).
+AUTH_PIN = os.environ.get("BOOKHAVEN_PIN", "").strip()
+
 # Scanner settings
 SCAN_BATCH_SIZE = 100  # commit every N books
 
