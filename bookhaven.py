@@ -188,6 +188,21 @@ scan_state = {"running": False, "current": 0, "total": 0, "message": "", "cancel
 
 # Pending uploads awaiting confirmation (upload_id -> upload_info)
 _pending_uploads = {}
+PENDING_UPLOAD_TTL = 3600  # seconds before an unconfirmed upload is discarded
+
+
+def _cleanup_pending_uploads(max_age=PENDING_UPLOAD_TTL):
+    """Drop pending uploads older than max_age and delete their temp files."""
+    now = time.time()
+    for uid in [u for u, p in _pending_uploads.items()
+                if now - p.get("created_at", 0) > max_age]:
+        pending = _pending_uploads.pop(uid, None)
+        if pending:
+            try:
+                os.unlink(pending["temp_path"])
+            except OSError:
+                pass
+            logger.info(f"Expired pending upload {uid} ({pending.get('filename')})")
 
 # No-cover SVG placeholder (served inline, no file needed)
 NO_COVER_SVG = '''<svg xmlns="http://www.w3.org/2000/svg" width="200" height="300" viewBox="0 0 200 300">
@@ -2017,6 +2032,7 @@ def _magic_bytes_ok(header, ext):
 @login_required
 def api_upload_analyze():
     """Accept an uploaded file, extract metadata and suggest a placement path."""
+    _cleanup_pending_uploads()
     if 'file' not in request.files:
         return jsonify({"error": "No file provided"}), 400
 
@@ -2067,6 +2083,7 @@ def api_upload_analyze():
             'ext': ext,
             'meta': meta,
             'dest_folder': dest_folder,
+            'created_at': time.time(),
         }
 
         return jsonify({
