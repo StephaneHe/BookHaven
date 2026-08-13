@@ -2,6 +2,8 @@
 import os
 from unittest.mock import patch
 
+import pytest
+
 os.environ.setdefault("BOOKHAVEN_SECRET_KEY", "test-secret-key-32chars-minimum!")
 os.environ.setdefault("BOOKHAVEN_TEST_MODE", "1")
 os.environ.setdefault("BOOKHAVEN_ENV", "development")
@@ -27,13 +29,14 @@ def test_run_server_uses_waitress_without_tls():
     flask_run.assert_not_called()
 
 
-def test_run_server_keeps_flask_for_tls():
-    """waitress has no TLS support: with certs present the existing Flask+ssl
-    path must keep working (don't break startup)."""
+def test_run_server_refuses_tls():
+    """3.7 — server.crt/server.key used to silently re-route serving through
+    the Werkzeug dev server, undoing the waitress fix. Startup must refuse
+    with a clear message instead (TLS belongs in a reverse proxy)."""
     with patch("waitress.serve") as serve, \
-         patch.object(bookhaven.app, "run") as flask_run:
+         patch.object(bookhaven.app, "run") as flask_run, \
+         pytest.raises(SystemExit) as exc:
         bookhaven._run_server(ssl_ctx=("crt", "key"))
     serve.assert_not_called()
-    flask_run.assert_called_once()
-    assert flask_run.call_args.kwargs.get("ssl_context") == ("crt", "key")
-    assert flask_run.call_args.kwargs.get("debug") is False
+    flask_run.assert_not_called()
+    assert "reverse proxy" in str(exc.value)

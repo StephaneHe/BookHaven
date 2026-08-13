@@ -2400,19 +2400,22 @@ def download_page():
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 def _run_server(ssl_ctx=None):
-    """Serve the app: waitress in the normal case, Flask only for the TLS path
-    (waitress does not terminate TLS) or if waitress is missing."""
-    if ssl_ctx is None:
-        try:
-            import waitress
-        except ImportError:
-            logger.warning("waitress not installed — falling back to Flask dev server")
-            app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True)
-            return
-        waitress.serve(app, host=config.HOST, port=config.PORT, threads=8)
-    else:
-        app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True,
-                ssl_context=ssl_ctx)
+    """Serve the app through waitress. In-process TLS is refused: waitress does
+    not terminate TLS and falling back to the Werkzeug dev server would
+    silently undo the production-server fix."""
+    if ssl_ctx is not None:
+        raise SystemExit(
+            "In-process TLS (server.crt/server.key) is not supported: it would "
+            "serve through the Flask dev server. Remove the cert files and "
+            "terminate TLS in a reverse proxy (nginx/caddy) in front of "
+            f"http://{config.HOST}:{config.PORT} instead.")
+    try:
+        import waitress
+    except ImportError:
+        logger.warning("waitress not installed — falling back to Flask dev server")
+        app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True)
+        return
+    waitress.serve(app, host=config.HOST, port=config.PORT, threads=8)
 
 
 if __name__ == "__main__":
@@ -2434,13 +2437,14 @@ if __name__ == "__main__":
     media_worker.start_worker()
     logger.info("Media enrichment worker launched")
 
-    # Use HTTPS if cert files exist
+    # In-process TLS is not supported; _run_server refuses loudly if cert
+    # files are present so waitress can't be silently bypassed.
     cert_file = os.path.join(config.BASE_DIR, "server.crt")
     key_file = os.path.join(config.BASE_DIR, "server.key")
     ssl_ctx = None
     if os.path.exists(cert_file) and os.path.exists(key_file):
         ssl_ctx = (cert_file, key_file)
-        logger.info(f"Server starting on https://{config.HOST}:{config.PORT}")
+        logger.error("server.crt/server.key found — refusing to start (TLS via reverse proxy)")
     else:
         logger.info(f"Server starting on http://{config.HOST}:{config.PORT} (waitress)")
     _run_server(ssl_ctx)
