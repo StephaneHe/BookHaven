@@ -763,17 +763,24 @@ def _fixup_epub_images(epub_path):
 convert_state = {"running": False, "book_id": None, "message": "", "epub_id": None, "error": None, "current_page": 0, "total_pages": 0, "started_at": 0}
 
 
+_convert_start_lock = threading.Lock()
+
+
 @app.route("/api/books/<int:book_id>/convert-epub", methods=["POST"])
 @login_required
 def api_convert_epub(book_id):
     """Convert a PDF book to EPUB using Calibre (async)."""
-    if convert_state["running"]:
-        # Treat as stale if running for more than 15 min with no progress
-        elapsed = time.time() - convert_state.get("started_at", 0)
-        if elapsed > 900:
-            convert_state["running"] = False
-        else:
-            return jsonify({"error": "A conversion is already in progress"}), 409
+    # Test-and-set under lock (TOCTOU): claim the flag before any check so two
+    # quick POSTs can never launch two Calibre runs on the same file.
+    with _convert_start_lock:
+        if convert_state["running"]:
+            # Treat as stale if running for more than 15 min with no progress
+            elapsed = time.time() - convert_state.get("started_at", 0)
+            if elapsed <= 900:
+                return jsonify({"error": "A conversion is already in progress"}), 409
+        convert_state["running"] = True
+        convert_state["started_at"] = time.time()
+    thread_started = False
     try:
         conn = database.get_db()
         book = conn.execute("SELECT id, path, filename, title, author, genre, format, page_count FROM books WHERE id = ?", (book_id,)).fetchone()
@@ -796,7 +803,6 @@ def api_convert_epub(book_id):
 
         def run_convert():
             import time as _time
-            convert_state["running"] = True
             convert_state["book_id"] = book_id
             convert_state["message"] = "Converting..."
             convert_state["epub_id"] = None
@@ -889,10 +895,15 @@ def api_convert_epub(book_id):
                 convert_state["running"] = False
 
         threading.Thread(target=run_convert, daemon=True).start()
+        thread_started = True
         return jsonify({"ok": True, "message": "Conversion started"})
     except Exception as e:
         logger.error(f"Error in convert_epub: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal server error"}), 500
+    finally:
+        # Pre-checks failed (404, not a PDF, ...): release the claimed flag.
+        if not thread_started:
+            convert_state["running"] = False
 
 
 @app.route("/api/convert/status")
@@ -1481,16 +1492,22 @@ def _list_comic_pages(path, fmt):
 
 # ── API: Library Scan ────────────────────────────────────────────────────────
 
+_scan_start_lock = threading.Lock()
+
+
 @app.route("/api/scan", methods=["POST"])
 @login_required
 def api_scan():
     """Trigger a library scan in a background thread."""
-    if scan_state["running"]:
-        return jsonify({"error": "Scan already in progress"}), 409
-
-    def run_scan():
+    # Test-and-set under lock: setting the flag inside the thread left a
+    # window where two quick POSTs both passed the check (TOCTOU).
+    with _scan_start_lock:
+        if scan_state["running"]:
+            return jsonify({"error": "Scan already in progress"}), 409
         scan_state["running"] = True
         scan_state["cancel"] = False
+
+    def run_scan():
         try:
             def cb(current, total, message):
                 scan_state["current"] = current
@@ -2005,10 +2022,10 @@ def api_enrichment_status():
 @login_required
 def api_enrichment_start():
     """Manually trigger media enrichment."""
-    status = media_worker.get_status()
-    if status["running"]:
+    # start_worker() does an atomic test-and-set; checking get_status() here
+    # first would reopen the TOCTOU window.
+    if media_worker.start_worker() is None:
         return jsonify({"error": "Enrichment already running"}), 409
-    media_worker.start_worker()
     return jsonify({"ok": True, "message": "Enrichment started"})
 
 

@@ -621,9 +621,29 @@ def _run_enrichment():
     )
 
 
+_start_lock = threading.Lock()
+
+
+def _run_enrichment_guarded():
+    try:
+        _run_enrichment()
+    finally:
+        # start_worker() claims the flag before the thread runs: it must be
+        # released even if _run_enrichment dies mid-way.
+        worker_status["running"] = False
+
+
 def start_worker():
-    """Start the enrichment worker in a background daemon thread."""
-    t = threading.Thread(target=_run_enrichment, daemon=True, name="media-worker")
+    """Start the enrichment worker in a background daemon thread.
+
+    Test-and-set on worker_status['running']: returns None (and starts
+    nothing) if a worker is already running.
+    """
+    with _start_lock:
+        if worker_status["running"]:
+            return None
+        worker_status["running"] = True
+    t = threading.Thread(target=_run_enrichment_guarded, daemon=True, name="media-worker")
     t.start()
     logger.info("Media enrichment worker started")
     return t
