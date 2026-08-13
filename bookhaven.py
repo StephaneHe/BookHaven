@@ -12,6 +12,7 @@ import logging
 import threading
 import mimetypes
 import traceback
+import subprocess
 from functools import wraps
 from io import BytesIO
 
@@ -683,7 +684,6 @@ def api_convert_epub(book_id):
         else:
             return jsonify({"error": "A conversion is already in progress"}), 409
     try:
-        import subprocess
         conn = database.get_db()
         book = conn.execute("SELECT id, path, filename, title, author, genre, format, page_count FROM books WHERE id = ?", (book_id,)).fetchone()
         if not book:
