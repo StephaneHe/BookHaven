@@ -5,6 +5,35 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.1.0] - 2026-08-13
+
+Release de sécurité (passe de remédiation TDD post-audit) : chaque correctif est
+couvert par des tests dans `tests/`.
+
+### Security
+- **XSS stocké via `/api/epub-resource`** : un `.html` embarqué dans un EPUB était servi en `text/html` sur l'origine de l'application. Seuls images/CSS/polices sont désormais servis inline avec leur vrai MIME ; tout le reste part en `application/octet-stream` + `Content-Disposition: attachment`, avec `nosniff` et une CSP `default-src 'none'` (neutralise aussi les scripts SVG).
+- **PIN de connexion optionnel** (`BOOKHAVEN_PIN` dans `.env`) : exigé à la connexion et à la création d'utilisateur quand configuré (comparaison à temps constant). Le bind `0.0.0.0` est conservé pour l'accès LAN/VPN ; PIN vide = comportement antérieur, documenté dans `.env.example`.
+- **Taille de requête bornée** : `MAX_CONTENT_LENGTH` configuré via `BOOKHAVEN_MAX_UPLOAD_MB` (défaut 512 Mo) — upload trop gros → 413.
+- **`/api/books/<id>/file` streame depuis le disque** (`send_file` + Range/206) au lieu de charger le fichier entier en RAM à chaque requête.
+- **Cookies de session durcis** : `SameSite=Lax` (bloque le CSRF par formulaire cross-site, ex. `/api/upload/analyze`), `HttpOnly` explicite, `Secure` opt-in via `BOOKHAVEN_COOKIE_SECURE`.
+- **Headers de sécurité globaux** (`after_request`) : CSP, `X-Content-Type-Options`, `X-Frame-Options`, `Referrer-Policy` sur toutes les réponses.
+- **Les détails d'exception ne sont plus renvoyés au client** : 15 handlers renvoyaient `str(e)` ; message générique côté client, détail loggé côté serveur.
+- **waitress remplace le serveur de développement Flask** (le chemin TLS et le fallback sans waitress conservent Flask). Point d'entrée inchangé : `scripts\start-server.cmd` et le watchdog fonctionnent tels quels.
+- **Uploads validés par magic bytes** (ZIP/RAR/%PDF/BOOKMOBI) en plus de l'extension.
+- **`BOOKHAVEN_TEST_MODE` verrouillé** : refuse de démarrer (RuntimeError) si `BOOKHAVEN_ENV` n'est pas un environnement de dev — le bypass d'auth ne peut plus fuiter en production.
+- **`/api/books/<id>/cover` et `/api/enrichment/status`** exigent désormais une session.
+- **Jokers SQL `%`/`_` échappés** dans les filtres LIKE (recherche, genre, auteur).
+
+### Fixed
+- `import subprocess` au niveau module : `except subprocess.TimeoutExpired` dans `optimize-epub` levait un `NameError` qui masquait l'erreur réelle.
+- Les uploads en attente expirent après 1 h (fuite mémoire + fichiers temporaires dans `data/uploads`).
+- `requirements.txt` : ajout de `PyMuPDF` (utilisé par 4 modules) et `waitress`, toutes les versions épinglées.
+- Rotation de `bookhaven.log` (5 Mo × 3 sauvegardes) — le fichier avait atteint 42 Mo.
+- `page`/`per_page`/`n` validés et bornés (plus de 500 sur entrée non numérique, `per_page` ≤ 200).
+
+### Changed
+- Suppression du doublon mort `_base_filename`/`_group_format_variants` (la première définition était écrasée par la seconde) ; sémantique active épinglée par des tests de caractérisation.
+
 ## [2.0.0] - 2026-08-06
 
 Version majeure : le serveur **refuse désormais de démarrer** avec une configuration
