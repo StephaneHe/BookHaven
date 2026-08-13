@@ -75,6 +75,19 @@ def test_non_string_pin_rejected_not_500(client):
             assert resp.status_code == 403, f"pin={bad!r}"
 
 
+def test_login_regenerates_session(client):
+    """Session fixation: data planted in a pre-login session must not survive
+    a successful login — the session is rebuilt from scratch."""
+    with client.session_transaction() as s:
+        s["planted"] = "attacker-data"
+    with patch.object(config, "AUTH_PIN", ""):
+        resp = client.post("/api/auth/login", json={"username": "Steph"})
+    assert resp.status_code == 200
+    with client.session_transaction() as s:
+        assert "planted" not in s
+        assert s["user_id"] == "u1"
+
+
 def test_pin_required_endpoint(client):
     with patch.object(config, "AUTH_PIN", "4321"):
         assert client.get("/api/auth/pin-required").get_json()["pin_required"] is True

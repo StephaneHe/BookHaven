@@ -420,6 +420,9 @@ def api_login():
         return jsonify({"error": "User not found"}), 401
 
     _clear_login_failures(ip)
+    # Anti session fixation: rebuild the session from scratch on login so
+    # nothing planted pre-auth survives (Flask reissues the cookie on change).
+    session.clear()
     session["user_id"] = user["id"]
     session["user_name"] = user["name"]
     conn.close()
