@@ -2247,6 +2247,22 @@ def download_page():
 
 # ── Main ─────────────────────────────────────────────────────────────────────
 
+def _run_server(ssl_ctx=None):
+    """Serve the app: waitress in the normal case, Flask only for the TLS path
+    (waitress does not terminate TLS) or if waitress is missing."""
+    if ssl_ctx is None:
+        try:
+            import waitress
+        except ImportError:
+            logger.warning("waitress not installed — falling back to Flask dev server")
+            app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True)
+            return
+        waitress.serve(app, host=config.HOST, port=config.PORT, threads=8)
+    else:
+        app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True,
+                ssl_context=ssl_ctx)
+
+
 if __name__ == "__main__":
     logger.info("BookHaven starting...")
     logger.info(f"  Database: {config.DB_PATH}")
@@ -2274,5 +2290,5 @@ if __name__ == "__main__":
         ssl_ctx = (cert_file, key_file)
         logger.info(f"Server starting on https://{config.HOST}:{config.PORT}")
     else:
-        logger.info(f"Server starting on http://{config.HOST}:{config.PORT}")
-    app.run(host=config.HOST, port=config.PORT, debug=False, threaded=True, ssl_context=ssl_ctx)
+        logger.info(f"Server starting on http://{config.HOST}:{config.PORT} (waitress)")
+    _run_server(ssl_ctx)

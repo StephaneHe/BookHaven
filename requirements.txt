@@ -3,3 +3,4 @@ rarfile>=4.1
 Pillow>=10.0
 requests>=2.31
 python-dotenv>=1.0
+waitress>=3.0
