@@ -1992,6 +1992,25 @@ def _determine_placement(meta, ext):
     return category, lib_path, f"{category} library root", False
 
 
+def _magic_bytes_ok(header, ext):
+    """Check that a file's leading bytes match its claimed extension.
+
+    Comics accept both ZIP and RAR signatures regardless of .cbz/.cbr, matching
+    the tolerance of _open_comic_archive for misnamed archives.
+    """
+    is_zip = header.startswith(b"PK\x03\x04")
+    is_rar = header.startswith(b"Rar!\x1a\x07")
+    if ext == ".epub":
+        return is_zip
+    if ext in (".cbz", ".cbr"):
+        return is_zip or is_rar
+    if ext == ".pdf":
+        return header.startswith(b"%PDF")
+    if ext == ".mobi":
+        return header[60:68] in (b"BOOKMOBI", b"TEXtREAd")
+    return False
+
+
 @app.route("/api/upload/analyze", methods=["POST"])
 @login_required
 def api_upload_analyze():
@@ -2016,6 +2035,15 @@ def api_upload_analyze():
     temp_id = str(uuid.uuid4())
     temp_path = os.path.join(temp_dir, temp_id + ext)
     f.save(temp_path)
+
+    with open(temp_path, "rb") as fh:
+        header = fh.read(68)
+    if not _magic_bytes_ok(header, ext):
+        try:
+            os.unlink(temp_path)
+        except OSError:
+            pass
+        return jsonify({"error": f"File content does not match a valid {ext} file"}), 400
 
     try:
         # Extract metadata using scanner
