@@ -29,3 +29,44 @@ def test_no_unbounded_bookhaven_log_handler_on_root():
                 h.baseFilename.endswith("bookhaven.log"):
             assert isinstance(h, RotatingFileHandler), (
                 "plain FileHandler on bookhaven.log — log grows without bound")
+
+
+class _FakeStream:
+    def __init__(self, tty):
+        self._tty = tty
+
+    def isatty(self):
+        return self._tty
+
+    def write(self, s):
+        pass
+
+    def flush(self):
+        pass
+
+
+def test_stdout_handler_quiet_when_redirected():
+    """3.9 — start-server.cmd pipes stdout into server.log, which has no
+    rotation: when stdout is not a TTY the stream handler must only pass
+    WARNING+ so server.log stays bounded (INFO goes to bookhaven.log)."""
+    h = bookhaven._make_stdout_handler(_FakeStream(tty=False))
+    assert h.level == logging.WARNING
+
+
+def test_stdout_handler_verbose_on_tty():
+    h = bookhaven._make_stdout_handler(_FakeStream(tty=True))
+    assert h.level == logging.INFO
+
+
+def test_stdout_handler_defensive_isatty():
+    class Broken:
+        def isatty(self):
+            raise ValueError("closed")
+
+        def write(self, s):
+            pass
+
+        def flush(self):
+            pass
+
+    assert bookhaven._make_stdout_handler(Broken()).level == logging.WARNING

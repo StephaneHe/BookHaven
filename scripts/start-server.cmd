@@ -30,6 +30,17 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTEN
 :: Small grace for the port to be released
 timeout /t 2 /nobreak >nul
 
+:: --- Rotate server logs (no in-process rotation on these files) --------
+:: Must run after the kill above: the old server holds server.log open.
+if exist "%LOG%" (
+    del "%LOG%.1" >nul 2>&1
+    ren "%LOG%" server.log.1 >nul 2>&1
+)
+if exist "%LOG_ERR%" (
+    del "%LOG_ERR%.1" >nul 2>&1
+    ren "%LOG_ERR%" server_err.log.1 >nul 2>&1
+)
+
 :: --- Launch Python server detached, logs to file -----------------------
 echo Starting BookHaven server...
 echo [%date% %time%] Launching python.exe bookhaven.py >> "%LOG%"

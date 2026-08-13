@@ -52,11 +52,29 @@ _log_file_handler = RotatingFileHandler(
     os.path.join(os.path.dirname(__file__), "bookhaven.log"),
     maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8",
 )
+
+
+def _make_stdout_handler(stream=None):
+    """Stream handler for stdout. When stdout is redirected to a file
+    (start-server.cmd pipes it into server.log, which has no in-process
+    rotation) only WARNING+ passes; full INFO detail lives in the rotating
+    bookhaven.log."""
+    if stream is None:
+        stream = sys.stdout
+    handler = logging.StreamHandler(stream)
+    try:
+        interactive = stream.isatty()
+    except Exception:
+        interactive = False
+    handler.setLevel(logging.INFO if interactive else logging.WARNING)
+    return handler
+
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     handlers=[
-        logging.StreamHandler(sys.stdout),
+        _make_stdout_handler(),
         _log_file_handler,
     ]
 )
