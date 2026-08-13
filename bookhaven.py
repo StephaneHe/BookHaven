@@ -1103,6 +1103,19 @@ def api_book_file(book_id):
     return send_file(BytesIO(data), mimetype=mimetype, download_name=book["filename"])
 
 
+# MIME types an EPUB resource may be served inline with. Everything else is
+# forced to download: a crafted .html/.js entry served on this origin would be
+# stored XSS with full access to the session cookie.
+_EPUB_RESOURCE_MIMES = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp",
+    ".svg": "image/svg+xml",
+    ".css": "text/css",
+    ".ttf": "font/ttf", ".otf": "font/otf",
+    ".woff": "font/woff", ".woff2": "font/woff2",
+}
+
+
 @app.route("/api/books/<int:book_id>/epub-resource/<path:resource_path>")
 @login_required
 def api_epub_resource(book_id, resource_path):
@@ -1157,8 +1170,18 @@ def api_epub_resource(book_id, resource_path):
     except zipfile.BadZipFile:
         abort(400)
 
-    mime = mimetypes.guess_type(resource_path)[0] or "application/octet-stream"
-    resp = Response(data, mimetype=mime)
+    ext = os.path.splitext(resource_path)[1].lower()
+    mime = _EPUB_RESOURCE_MIMES.get(ext)
+    if mime:
+        resp = Response(data, mimetype=mime)
+    else:
+        # Anything else (HTML, JS, XML…) is attacker-controlled zip content:
+        # never let the browser render it on this origin.
+        resp = Response(data, mimetype="application/octet-stream")
+        resp.headers["Content-Disposition"] = "attachment"
+    resp.headers["X-Content-Type-Options"] = "nosniff"
+    # Neutralizes scripts in SVG (and anything else) if navigated to directly.
+    resp.headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'"
     resp.headers["Cache-Control"] = "public, max-age=3600"
     return resp
 
