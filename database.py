@@ -74,6 +74,10 @@ def init_db():
         pass  # Column already exists
 
     conn.executescript("""
+        -- After the collection_path migration above: on a pre-collection_path
+        -- database the column only exists once the ALTER TABLE has run.
+        CREATE INDEX IF NOT EXISTS idx_books_collection_path ON books(collection_path);
+
         CREATE TABLE IF NOT EXISTS user_category_order (
             user_id TEXT PRIMARY KEY,
             category_order TEXT NOT NULL DEFAULT '[]',
