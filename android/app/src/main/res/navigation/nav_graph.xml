@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<navigation xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/nav_graph"
+    app:startDestination="@id/loginFragment">
+
+    <fragment
+        android:id="@+id/loginFragment"
+        android:name="com.bookhaven.android.ui.login.LoginFragment"
+        android:label="Login">
+        <action
+            android:id="@+id/action_login_to_main"
+            app:destination="@id/libraryFragment"
+            app:popUpTo="@id/loginFragment"
+            app:popUpToInclusive="true" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/libraryFragment"
+        android:name="com.bookhaven.android.ui.library.LibraryFragment"
+        android:label="@string/nav_library">
+        <action
+            android:id="@+id/action_library_to_detail"
+            app:destination="@id/bookDetailFragment" />
+        <action
+            android:id="@+id/action_library_to_upload"
+            app:destination="@id/uploadFragment" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/offlineFragment"
+        android:name="com.bookhaven.android.ui.offline.OfflineFragment"
+        android:label="@string/nav_offline" />
+
+    <fragment
+        android:id="@+id/settingsFragment"
+        android:name="com.bookhaven.android.ui.settings.SettingsFragment"
+        android:label="@string/nav_settings" />
+
+    <fragment
+        android:id="@+id/bookDetailFragment"
+        android:name="com.bookhaven.android.ui.detail.BookDetailFragment"
+        android:label="Book Detail" />
+
+    <fragment
+        android:id="@+id/uploadFragment"
+        android:name="com.bookhaven.android.ui.upload.UploadFragment"
+        android:label="Upload" />
+
+</navigation>

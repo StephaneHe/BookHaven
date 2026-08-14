@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EPUB Reader</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #1a1a1a; }
+  #viewer { width: 100%; height: 100%; }
+  /* Tap zones — left 33% = prev, right 33% = next.
+     Center 33% is uncovered so epub links and our controls work. */
+  #nav-prev, #nav-next {
+    position: fixed; top: 0; height: 100%; width: 33%;
+    z-index: 10; -webkit-tap-highlight-color: transparent;
+  }
+  #nav-prev { left: 0; }
+  #nav-next { right: 0; }
+
+  .font-btn {
+    background: rgba(0,0,0,0.55); color: #fff;
+    border: none; border-radius: 10px; padding: 4px 10px; font-size: 12px;
+    cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Page indicator — bottom center, inside the safe 34% zone. */
+  #bottom-controls {
+    position: fixed; bottom: 10px; left: 34%; right: 34%;
+    display: flex; align-items: center; justify-content: center;
+    z-index: 20; pointer-events: none;
+  }
+  #page-pill {
+    background: rgba(0,0,0,0.55); color: #fff;
+    padding: 3px 11px; border-radius: 12px; font-size: 11px;
+    cursor: pointer; user-select: none; display: none; white-space: nowrap;
+    pointer-events: auto; -webkit-tap-highlight-color: transparent;
+  }
+  #page-jump-overlay {
+    position: fixed; inset: 0; z-index: 19; display: none;
+  }
+  #page-jump-form {
+    background: rgba(0,0,0,0.70); color: #fff;
+    padding: 5px 13px; border-radius: 12px; font-size: 13px;
+    display: none; align-items: center; gap: 5px; white-space: nowrap;
+    pointer-events: auto;
+  }
+  #page-jump-input {
+    width: 52px; background: none; border: none;
+    border-bottom: 1px solid rgba(255,255,255,0.55);
+    color: #fff; font-size: 13px; text-align: center;
+    outline: none; padding: 0 2px; -moz-appearance: textfield;
+  }
+  #page-jump-input::-webkit-inner-spin-button,
+  #page-jump-input::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+  #theme-controls {
+    position: fixed; bottom: 10px; right: 10px;
+    display: flex; align-items: center; gap: 8px; z-index: 20;
+  }
+  .theme-dot {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid rgba(100,100,100,0.7); cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .theme-dot.active { border-color: #4a9fd4; box-shadow: 0 0 0 1px #4a9fd4; }
+
+  /* Locations-loading spinner — visible until generate() settles */
+  @keyframes seek-spin { to { transform: rotate(360deg); } }
+  #seek-loader {
+    width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(0,0,0,0.45);
+    display: flex; align-items: center; justify-content: center;
+  }
+  #seek-loader::after {
+    content: ''; box-sizing: border-box;
+    width: 12px; height: 12px;
+    border: 2px solid rgba(255,255,255,0.25);
+    border-top-color: rgba(255,255,255,0.9);
+    border-radius: 50%;
+    animation: seek-spin 0.85s linear infinite;
+  }
+</style>
+</head>
+<body>
+<div id="viewer"></div>
+<div id="nav-prev"></div>
+<div id="nav-next"></div>
+
+<div id="bottom-controls">
+  <div id="seek-loader"></div>
+  <div id="page-pill"></div>
+  <div id="page-jump-form">
+    <input id="page-jump-input" type="number" inputmode="numeric" min="1">
+    <span id="page-jump-sep"></span>
+  </div>
+</div>
+<div id="page-jump-overlay"></div>
+
+<div id="theme-controls">
+  <button class="font-btn" id="font-dec">A−</button>
+  <button class="font-btn" id="font-inc">A+</button>
+  <div class="theme-dot" id="td-light" style="background:#ffffff;" title="Clair"></div>
+  <div class="theme-dot" id="td-sepia" style="background:#f6f1e7;" title="Sépia"></div>
+  <div class="theme-dot" id="td-dark" style="background:#1e1e1e;" title="Sombre"></div>
+</div>
+
+<script src="jszip.min.js"></script>
+<script src="epub.min.js"></script>
+<script>
+(function() {
+  var bookId    = (typeof window.__BOOK_ID    !== 'undefined') ? window.__BOOK_ID    : '';
+  var serverUrl = (typeof window.__SERVER_URL !== 'undefined') ? window.__SERVER_URL : '';
+  var localPath = (typeof window.__LOCAL_PATH !== 'undefined') ? window.__LOCAL_PATH : '';
+  var savedCfi  = (typeof window.__SAVED_CFI  !== 'undefined') ? window.__SAVED_CFI  : '';
+
+  var book = ePub('file://' + localPath);
+  var rendition = book.renderTo('viewer', {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    spread: 'none',
+    allowScriptedContent: true,
+  });
+
+  // ── Navigation lock ──────────────────────────────────────────
+  var navPending = false;
+  var navSafety  = null;
+  function doNav(fn) {
+    if (navPending) return;
+    navPending = true;
+    navSafety = setTimeout(function() { navPending = false; }, 2000);
+    function release() { navPending = false; clearTimeout(navSafety); }
+    try {
+      var p = fn();
+      if (p && typeof p.catch === 'function') p.catch(release);
+    } catch(e) { release(); }
+  }
+
+  function makeTapZone(el, fn) {
+    var startX = 0;
+    el.addEventListener('touchstart', function(e) {
+      startX = e.changedTouches[0].clientX;
+    }, { passive: true });
+    el.addEventListener('touchend', function(e) {
+      if (Math.abs(e.changedTouches[0].clientX - startX) < 20) doNav(fn);
+    }, { passive: true });
+  }
+  makeTapZone(document.getElementById('nav-prev'), function() { rendition.prev(); });
+  makeTapZone(document.getElementById('nav-next'), function() { rendition.next(); });
+
+  // ── Theme ────────────────────────────────────────────────────
+  var THEMES = {
+    light: { bg: '#ffffff', fg: '#111111', outer: '#f0f0f0' },
+    sepia: { bg: '#f6f1e7', fg: '#3b2e1e', outer: '#e0d8c8' },
+    dark:  { bg: '#1e1e1e', fg: '#d8d0c4', outer: '#111111' }
+  };
+  var currentTheme = 'light';
+
+  function themeCSS(t) {
+    return 'html,body{background:' + t.bg + '!important;color:' + t.fg + '!important}';
+  }
+
+  function applyTheme(name) {
+    if (!THEMES[name]) return;
+    currentTheme = name;
+    var t = THEMES[name];
+    document.documentElement.style.background = t.outer;
+    document.body.style.background = t.outer;
+    ['light','sepia','dark'].forEach(function(n) {
+      var el = document.getElementById('td-' + n);
+      if (el) el.className = 'theme-dot' + (n === name ? ' active' : '');
+    });
+    try {
+      rendition.getContents().forEach(function(c) {
+        if (!c.document) return;
+        var el = c.document.getElementById('reader-theme');
+        if (!el) { el = c.document.createElement('style'); el.id = 'reader-theme'; c.document.head && c.document.head.appendChild(el); }
+        el.textContent = themeCSS(t);
+      });
+    } catch(e) {}
+  }
+
+  ['light','sepia','dark'].forEach(function(n) {
+    var el = document.getElementById('td-' + n);
+    if (el) el.addEventListener('click', function() { applyTheme(n); });
+  });
+  applyTheme('light');
+
+  // ── Font size ────────────────────────────────────────────────
+  var fontSize = 100;
+  function applyFontSize() {
+    rendition.themes.fontSize(fontSize + '%');
+    setTimeout(function() { rendition.resize(window.innerWidth, window.innerHeight); }, 60);
+  }
+  document.getElementById('font-dec').addEventListener('click', function() {
+    if (fontSize > 60) { fontSize -= 10; applyFontSize(); }
+  });
+  document.getElementById('font-inc').addEventListener('click', function() {
+    if (fontSize < 200) { fontSize += 10; applyFontSize(); }
+  });
+
+  // ── Page indicator & jump ────────────────────────────────────
+  var currentPage = 0, totalPages = 0;
+  var pagePill        = document.getElementById('page-pill');
+  var pageJumpForm    = document.getElementById('page-jump-form');
+  var pageJumpInput   = document.getElementById('page-jump-input');
+  var pageJumpSep     = document.getElementById('page-jump-sep');
+  var pageJumpOverlay = document.getElementById('page-jump-overlay');
+
+  function updatePill(pn, total) {
+    if (total <= 0 || pageJumpForm.style.display === 'flex') return;
+    currentPage = pn; totalPages = total;
+    pagePill.textContent = pn + ' / ' + total;
+    pagePill.style.display = 'inline-block';
+  }
+
+  function openJump() {
+    if (!totalPages) return;
+    pagePill.style.display = 'none';
+    pageJumpInput.value = currentPage;
+    pageJumpInput.max   = totalPages;
+    pageJumpSep.textContent = '/ ' + totalPages;
+    pageJumpForm.style.display = 'flex';
+    pageJumpOverlay.style.display = 'block';
+    setTimeout(function() { pageJumpInput.focus(); pageJumpInput.select(); }, 50);
+  }
+
+  function closeJump(navigate) {
+    pageJumpForm.style.display = 'none';
+    pageJumpOverlay.style.display = 'none';
+    if (totalPages > 0) pagePill.style.display = 'inline-block';
+    if (navigate) {
+      var n = parseInt(pageJumpInput.value, 10);
+      if (n >= 1 && n <= totalPages && n !== currentPage) {
+        window.seekToProgress(n / totalPages * 100);
+      }
+    }
+  }
+
+  pagePill.addEventListener('click', openJump);
+  pageJumpOverlay.addEventListener('click', function() { closeJump(false); });
+  pageJumpInput.addEventListener('keydown', function(e) {
+    if (e.key === 'Enter'  || e.keyCode === 13) { e.preventDefault(); closeJump(true); }
+    if (e.key === 'Escape' || e.keyCode === 27) { closeJump(false); }
+  });
+
+  // ── Content hook ─────────────────────────────────────────────
+  rendition.hooks.content.register(function(contents) {
+    var doc = contents.document;
+
+    var themeStyleEl = doc.createElement('style');
+    themeStyleEl.id = 'reader-theme';
+    themeStyleEl.textContent = themeCSS(THEMES[currentTheme]);
+    if (doc.head) doc.head.appendChild(themeStyleEl);
+
+    var styleEl = doc.createElement('style');
+    styleEl.textContent =
+      'img, image, svg {' +
+      '  max-width: 100% !important;' +
+      '  max-height: calc(100vh - 40px) !important;' +
+      '  height: auto !important;' +
+      '  object-fit: contain;' +
+      '  page-break-inside: avoid;' +
+      '  break-inside: avoid; }' +
+      'img { display: block; margin: 0.5em auto; }';
+    if (doc.head) doc.head.appendChild(styleEl);
+
+    // Decode JSON Unicode escapes left by EPUB generators (< → <).
+    (function() {
+      var walker = doc.createTreeWalker(doc.body, 4 /* SHOW_TEXT */);
+      var node, re = /\\u[0-9a-fA-F]{4}/;
+      while ((node = walker.nextNode())) {
+        if (re.test(node.nodeValue)) {
+          node.nodeValue = node.nodeValue.replace(/\\u([0-9a-fA-F]{4})/g, function(_, h) {
+            return String.fromCharCode(parseInt(h, 16));
+          });
+        }
+      }
+    })();
+
+    // Fix flat-structure EPUB images (server-side fallback for broken blob: src).
+    var sectionHref = (contents.section && contents.section.href) || '';
+    var chapterBase = 'http://epub-internal/' + sectionHref;
+    doc.querySelectorAll('img[src]').forEach(function(img) {
+      var rawSrc = img.getAttribute('src');
+      if (!rawSrc || rawSrc.startsWith('blob:') || rawSrc.startsWith('data:') ||
+          rawSrc.startsWith('http') || rawSrc.startsWith('file:')) return;
+      var zipPath = rawSrc;
+      try {
+        var resolved = new URL(rawSrc, chapterBase);
+        zipPath = resolved.pathname.replace(/^\//, '');
+      } catch(e) {}
+      img.setAttribute('src', serverUrl + '/api/books/' + bookId + '/epub-resource/' + zipPath);
+    });
+  });
+
+  // ── Relocated ────────────────────────────────────────────────
+  var displayed = false;
+  var locationsReady = false;
+
+  rendition.on('relocated', function(location) {
+    navPending = false;
+    clearTimeout(navSafety);
+    displayed = true;
+    if (!location || !location.start) return;
+    var cfi = location.start.cfi || '';
+    var total = (book.locations && book.locations.total) || 0;
+    var pct = (locationsReady && total > 0 && cfi)
+      ? (book.locations.percentageFromCfi(cfi) || 0) * 100
+      : (location.start.percentage || 0) * 100;
+    var pageNum = (locationsReady && total > 0) ? Math.max(1, Math.round(pct / 100 * total)) : 0;
+    console.log('EPUB relocated: locationsReady=' + locationsReady + ' total=' + total + ' pct=' + pct.toFixed(1) + ' pageNum=' + pageNum + ' cfi=' + cfi.substring(0,40));
+    updatePill(pageNum, total);
+    if (total > 0) { try { Android.onPageChange(cfi, pct, pageNum, total); } catch(e) { console.log('onPageChange err: ' + e); } }
+    else { try { Android.onProgressCfi(cfi); } catch(e) {} }
+  });
+
+  var _pendingSeekPct = null;
+  window.seekToProgress = function(pct) {
+    if (!book.locations || !book.locations.total) {
+      _pendingSeekPct = pct; // apply once locations are ready
+      return;
+    }
+    _pendingSeekPct = null;
+    var cfi = book.locations.cfiFromPercentage(pct / 100);
+    if (cfi) rendition.display(cfi);
+  };
+
+  book.ready.then(function() {
+    console.log('EPUB book.ready resolved, displaying...');
+    return rendition.display(savedCfi || undefined);
+  }).then(function() {
+    console.log('EPUB display done, loading locations...');
+    var locationsUrl = serverUrl + '/api/books/' + bookId + '/epub-locations';
+    function onLocationsReady() {
+      locationsReady = true;
+      var total = book.locations.total || 0;
+      var loader = document.getElementById('seek-loader');
+      if (loader) loader.style.display = 'none';
+      console.log('EPUB locations ready: total=' + total);
+      try { Android.onLocationsReady(total); } catch(e) { console.log('onLocationsReady err: ' + e); }
+      var loc = rendition.currentLocation();
+      if (loc && loc.start && loc.start.cfi) {
+        var cfi = loc.start.cfi;
+        var pct = total > 0 ? (book.locations.percentageFromCfi(cfi) || 0) * 100 : 0;
+        var pn  = total > 0 ? Math.max(1, Math.round(pct / 100 * total)) : 0;
+        updatePill(pn, total);
+        if (total > 0) { try { Android.onPageChange(cfi, pct, pn, total); } catch(e) {} }
+      }
+      if (_pendingSeekPct !== null) {
+        var p = _pendingSeekPct; _pendingSeekPct = null;
+        window.seekToProgress(p);
+      }
+    }
+    // Try server cache first — instant if already generated on any device
+    fetch(locationsUrl).then(function(r) { return r.json(); }).then(function(d) {
+      if (d.locations) {
+        book.locations.load(d.locations);
+        onLocationsReady();
+      } else {
+        throw new Error('no cache');
+      }
+    }).catch(function() {
+      // Cache miss: generate in-browser then save for next time
+      book.locations.generate(1600).then(function() {
+        onLocationsReady();
+        try {
+          fetch(locationsUrl, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({ locations: book.locations.save() })
+          });
+        } catch(e) {}
+      }).catch(function(genErr) {
+        console.log('EPUB generate FAILED: ' + genErr);
+        var loader = document.getElementById('seek-loader');
+        if (loader) loader.style.display = 'none';
+      });
+    });
+  }).catch(function(err) {
+    try { Android.onError(String(err)); } catch(e) {}
+    document.body.innerHTML = '<p style="color:red;padding:16px">Error: ' + err + '</p>';
+  });
+
+  setTimeout(function() {
+    if (!displayed) {
+      var msg = 'Timeout loading EPUB';
+      try { Android.onError(msg); } catch(e) {}
+      document.body.innerHTML = '<p style="color:red;padding:16px">' + msg + '</p>';
+    }
+  }, 20000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,6 @@
+-keepattributes Signature
+-keepattributes *Annotation*
+-keep class com.bookhaven.android.data.api.model.** { *; }
+-keep class retrofit2.** { *; }
+-dontwarn retrofit2.**
+-keep class com.google.gson.** { *; }
