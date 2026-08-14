@@ -5,7 +5,6 @@ tolerated divergences (plan section 4.8) are handled by `normalize`, and
 nothing else is allowed to differ -- payloads are compared whole, list order
 included.
 """
-import json
 import os
 import pytest
 from unittest.mock import patch
@@ -20,7 +19,8 @@ import database   # noqa: E402
 
 import grouped_fixtures                               # noqa: E402
 from legacy_grouped import legacy_books_grouped_payload  # noqa: E402
-from test_books_grouped_parity import FILTER_COMBOS, PAGINATIONS, jsonable  # noqa: E402
+from grouped_compare import normalize                    # noqa: E402
+from test_books_grouped_parity import FILTER_COMBOS, PAGINATIONS  # noqa: E402
 
 
 @pytest.fixture()
@@ -34,50 +34,8 @@ def conn(tmp_path):
         c.close()
 
 
-def _tie_key(item):
-    """Canonical order inside a run of items whose title.lower() is equal."""
-    return (item["type"], item.get("collection_path") or "", item.get("id") or 0)
-
-
-def normalize(payload):
-    """Erase the two divergences the plan allows, and only those.
-
-    1. cover_book_id of a collection: the legacy value was whichever covered
-       row the query plan returned first; the new one is MIN(id). Compared as
-       "has a cover or not" here -- the exact value is pinned by
-       test_books_grouped_agg.py.
-    2. Order of items that tie on title.lower(): the legacy order came from a
-       dict's insertion order. Both sides are re-sorted on a canonical key.
-    3. Order of variants that tie on FORMAT_PRIORITY inside `formats` (same
-       base filename AND same format, e.g. two "top.epub" in different
-       folders): the legacy sort was stable over whatever order the query plan
-       returned. Both sides are re-sorted by (priority, id). The priority
-       order itself -- and therefore the primary -- stays strictly compared.
-    """
-    payload = jsonable(payload)
-    for item in payload["items"]:
-        if item["type"] == "collection":
-            item["cover_book_id"] = bool(item["cover_book_id"])
-        else:
-            item["formats"] = sorted(
-                item["formats"],
-                key=lambda f: (bookhaven.FORMAT_PRIORITY.get(f["format"], 9), f["id"]))
-
-    items, out = payload["items"], []
-    i = 0
-    while i < len(items):
-        j = i
-        key = (items[i].get("title") or "").lower()
-        while j < len(items) and (items[j].get("title") or "").lower() == key:
-            j += 1
-        out.extend(sorted(items[i:j], key=_tie_key))
-        i = j
-    payload["items"] = out
-    return payload
-
-
 def assert_parity(conn, **kwargs):
-    new = bookhaven._books_grouped_fast(conn, **kwargs)
+    new = bookhaven._books_grouped_payload(conn, **kwargs)
     old = legacy_books_grouped_payload(conn, **kwargs)
     assert normalize(new) == normalize(old)
     # the tolerated divergences must not hide a changed item count
@@ -95,7 +53,7 @@ def test_top_level_parity_matrix(conn, filters, pagination):
 
 def test_top_level_parity_on_every_page(conn):
     """Walk the whole listing 7 items at a time: nothing may shift pages."""
-    total = bookhaven._books_grouped_fast(conn, per_page=7)["total"]
+    total = bookhaven._books_grouped_payload(conn, per_page=7)["total"]
     for page in range(1, (total + 6) // 7 + 1):
         assert_parity(conn, page=page, per_page=7)
 
@@ -137,7 +95,7 @@ def test_prefix_wildcard_quirk_is_reproduced(conn, prefix):
 
 
 def test_prefix_browse_lists_sub_collections_and_books(conn):
-    new = bookhaven._books_grouped_fast(conn, prefix="Collection 02", per_page=50)
+    new = bookhaven._books_grouped_payload(conn, prefix="Collection 02", per_page=50)
     kinds = {i["type"] for i in new["items"]}
     assert kinds == {"collection"}
     for item in new["items"]:
@@ -146,14 +104,14 @@ def test_prefix_browse_lists_sub_collections_and_books(conn):
 
 def test_prefix_browse_has_no_single_book_promotion(conn):
     """Unlike the top level, a one-book sub-folder stays a collection."""
-    new = bookhaven._books_grouped_fast(conn, prefix="100% Comics", per_page=50)
+    new = bookhaven._books_grouped_payload(conn, prefix="100% Comics", per_page=50)
     subs = [i for i in new["items"] if i["type"] == "collection"]
     assert subs and all(i["book_count"] >= 1 for i in subs)
     assert any(i["book_count"] == 1 for i in subs)
 
 
 def test_multi_format_group_keeps_the_best_primary(conn):
-    new = bookhaven._books_grouped_fast(conn, search="Triple Play", per_page=50)
+    new = bookhaven._books_grouped_payload(conn, search="Triple Play", per_page=50)
     item = next(i for i in new["items"] if i["title"].startswith("Triple Play"))
     assert item["format"] == "epub"
     assert [f["format"] for f in item["formats"]] == ["epub", "pdf", "mobi"]
@@ -161,7 +119,7 @@ def test_multi_format_group_keeps_the_best_primary(conn):
 
 def test_format_filter_changes_the_primary(conn):
     """Legacy behaviour: the filter runs before grouping."""
-    new = bookhaven._books_grouped_fast(conn, search="Triple Play", fmt="pdf",
+    new = bookhaven._books_grouped_payload(conn, search="Triple Play", fmt="pdf",
                                         per_page=50)
     item = next(i for i in new["items"] if i["title"].startswith("Triple Play"))
     assert item["format"] == "pdf"
@@ -172,7 +130,7 @@ def test_variant_inside_a_collection_does_not_join_a_standalone(conn):
     """Risk #10: a book living in a multi-book collection is invisible to the
     top-level variant grouping, so it stays a separate item -- exactly as in
     the legacy code, which queried the two sets separately too."""
-    new = bookhaven._books_grouped_fast(conn, search="Inside Story", per_page=50)
+    new = bookhaven._books_grouped_payload(conn, search="Inside Story", per_page=50)
     by_title = {i["title"]: i for i in new["items"]}
     assert set(by_title) == {"Inside Story standalone", "Variants Inside"}
     assert [f["format"] for f in by_title["Inside Story standalone"]["formats"]] == ["mobi"]
@@ -181,18 +139,18 @@ def test_variant_inside_a_collection_does_not_join_a_standalone(conn):
 def test_standalone_merges_with_a_single_book_collection_variant(conn):
     """Characterised legacy behaviour: single-book collections are pulled into
     the same query as the standalone books, so their variants DO merge."""
-    new = bookhaven._books_grouped_fast(conn, search="Split Base", per_page=50)
+    new = bookhaven._books_grouped_payload(conn, search="Split Base", per_page=50)
     assert [i["title"] for i in new["items"]] == ["Split Base standalone"]
     assert [f["format"] for f in new["items"][0]["formats"]] == ["epub", "pdf"]
 
 
 def test_case_sensitive_base_filenames_stay_separate(conn):
-    new = bookhaven._books_grouped_fast(conn, search="Dune", per_page=50)
+    new = bookhaven._books_grouped_payload(conn, search="Dune", per_page=50)
     assert sorted(i["title"] for i in new["items"]) == ["Dune", "dune lowercase"]
 
 
 def test_hydrated_books_carry_every_column(conn):
-    new = bookhaven._books_grouped_fast(conn, per_page=50)
+    new = bookhaven._books_grouped_payload(conn, per_page=50)
     books = [i for i in new["items"] if i["type"] == "book"]
     assert books
     columns = {r[1] for r in conn.execute("PRAGMA table_info(books)")}
@@ -202,7 +160,7 @@ def test_hydrated_books_carry_every_column(conn):
 
 
 def test_no_internal_keys_leak(conn):
-    new = bookhaven._books_grouped_fast(conn, per_page=50)
+    new = bookhaven._books_grouped_payload(conn, per_page=50)
     assert all("_primary_id" not in i for i in new["items"])
 
 
@@ -210,7 +168,7 @@ def test_empty_database(tmp_path):
     with patch.object(config, "DB_PATH", str(tmp_path / "empty.db")):
         database.init_db()
         c = database.get_db()
-        new = bookhaven._books_grouped_fast(c, per_page=50)
+        new = bookhaven._books_grouped_payload(c, per_page=50)
         assert new == legacy_books_grouped_payload(c, per_page=50)
         assert new["total"] == 0 and new["pages"] == 0 and new["items"] == []
         c.close()

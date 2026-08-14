@@ -1,12 +1,12 @@
 """Characterization harness for GET /api/books/grouped.
 
-Step 1 of the v2.3.0 optimisation: pin the current behaviour before touching
-anything. `tests/legacy_grouped.py` holds a frozen copy of the v2.2.0
-implementation; the first test proves that copy is a faithful oracle by
-comparing it to the live route. The later steps compare the new SQL-backed
-implementation to that same oracle.
+`tests/legacy_grouped.py` holds a frozen copy of the v2.2.0 implementation.
+When this harness was written (step 1, before any code moved) the route and
+that copy returned byte-identical payloads, which is what proved the copy is a
+faithful oracle. Since the route switched to the SQL-backed implementation it
+is compared through `normalize`, which tolerates the three documented
+divergences and nothing else -- that is the contract the front end depends on.
 """
-import json
 import os
 import pytest
 from unittest.mock import patch
@@ -20,6 +20,7 @@ import config     # noqa: E402
 import database   # noqa: E402
 
 import grouped_fixtures                               # noqa: E402
+from grouped_compare import jsonable, normalize            # noqa: E402
 from legacy_grouped import legacy_books_grouped_payload  # noqa: E402
 
 
@@ -46,11 +47,6 @@ PAGINATIONS = [
 ]
 
 
-def jsonable(payload):
-    """Round-trip through JSON so Row-derived values compare like the API's."""
-    return json.loads(json.dumps(payload))
-
-
 @pytest.fixture()
 def env(tmp_path):
     """Client + patched DB_PATH, holding the deterministic fixture library."""
@@ -75,14 +71,16 @@ def oracle(**kwargs):
 
 @pytest.mark.parametrize("filters", FILTER_COMBOS)
 @pytest.mark.parametrize("pagination", PAGINATIONS)
-def test_frozen_oracle_matches_the_live_route(env, filters, pagination):
-    """The frozen copy really is the current endpoint, byte for byte."""
+def test_live_route_matches_the_frozen_oracle(env, filters, pagination):
+    """End-to-end parity: the HTTP response still is the v2.2.0 payload."""
     query = dict(filters, **pagination)
     resp = env.get("/api/books/grouped", query_string=query)
     assert resp.status_code == 200
     kwargs = dict(query)
     kwargs["fmt"] = kwargs.pop("format", "")
-    assert resp.get_json() == oracle(**kwargs)
+    expected = oracle(**kwargs)
+    assert normalize(resp.get_json()) == normalize(expected)
+    assert resp.get_json()["total"] == expected["total"]
 
 
 @pytest.mark.parametrize("prefix", [
@@ -91,10 +89,10 @@ def test_frozen_oracle_matches_the_live_route(env, filters, pagination):
     "Variants Inside",
     "Nope does not exist",
 ])
-def test_frozen_oracle_matches_the_live_route_with_prefix(env, prefix):
+def test_live_route_matches_the_frozen_oracle_with_prefix(env, prefix):
     resp = env.get("/api/books/grouped", query_string={"prefix": prefix, "per_page": 50})
     assert resp.status_code == 200
-    assert resp.get_json() == oracle(prefix=prefix, per_page=50)
+    assert normalize(resp.get_json()) == normalize(oracle(prefix=prefix, per_page=50))
 
 
 def test_envelope_shape(env):

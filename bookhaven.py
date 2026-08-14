@@ -1848,14 +1848,18 @@ def _hydrate_page(conn, page_items):
     return out
 
 
-def _books_grouped_fast(conn, category="", genre="", author="", fmt="",
-                        search="", prefix="", page=1, per_page=50):
-    """SQL-backed implementation of the grouped listing.
+def _books_grouped_payload(conn, category="", genre="", author="", fmt="",
+                           search="", prefix="", page=1, per_page=50):
+    """Build the /api/books/grouped response body (pure, no request/response).
 
-    Same three phases as the legacy code, but only light keys ever reach RAM:
-    aggregate the collections and the format-variant groups in SQL, sort and
-    paginate those keys in Python (str.lower() ordering is Unicode-aware where
-    SQLite's lower() is ASCII-only), then hydrate just the requested page.
+    Only light keys ever reach RAM: the collections and the format-variant
+    groups are aggregated in SQL, those keys are sorted and paginated in Python
+    (str.lower() ordering is Unicode-aware where SQLite's lower() only folds
+    ASCII), and a single SELECT * hydrates the requested page.
+
+    The response is byte-compatible with the pre-2.3.0 implementation, kept as
+    an oracle in tests/legacy_grouped.py; the deliberate divergences are listed
+    in the 2.3.0 CHANGELOG entry.
     """
     where, params = _grouped_where(category, genre, author, fmt, search)
 
@@ -1883,159 +1887,6 @@ def _books_grouped_fast(conn, category="", genre="", author="", fmt="",
     total = len(items)
     start = (page - 1) * per_page
     page_items = _hydrate_page(conn, items[start:start + per_page])
-
-    return {
-        "items": page_items,
-        "total": total,
-        "page": page,
-        "per_page": per_page,
-        "pages": (total + per_page - 1) // per_page,
-        "prefix": prefix,
-    }
-
-
-def _books_grouped_payload(conn, category="", genre="", author="", fmt="",
-                           search="", prefix="", page=1, per_page=50):
-    """Build the /api/books/grouped response body (pure, no request/response).
-
-    Kept separate from the route so it can be exercised directly and compared
-    against the frozen v2.2.0 oracle in tests/legacy_grouped.py.
-    """
-    where, params = _grouped_where(category, genre, author, fmt, search)
-
-    if prefix:
-        # Browsing inside a collection: show next level
-        prefix_filter = f'{"AND" if where else "WHERE"} collection_path LIKE ?'
-        prefix_param = prefix + '/%'
-        exact_filter = f'{"AND" if where else "WHERE"} collection_path = ?'
-        
-        # Get sub-folders at next level
-        # collection_path starts with prefix/ -> extract next segment
-        all_in_prefix = conn.execute(
-            f"SELECT id, title, author, collection_path, has_cover, format, filename, genre FROM books {where} {prefix_filter}",
-            params + [prefix_param]
-        ).fetchall()
-        
-        # Also get books exactly at this level
-        exact_books = conn.execute(
-            f"SELECT * FROM books {where} {exact_filter}",
-            params + [prefix]
-        ).fetchall()
-        
-        # Group by next sub-level
-        sub_groups = {}
-        for r in all_in_prefix:
-            rest = r["collection_path"][len(prefix) + 1:]  # after "prefix/"
-            next_level = rest.split("/")[0]
-            if next_level not in sub_groups:
-                sub_groups[next_level] = {"count": 0, "cover_id": 0, "authors": set(), "full_path": prefix + "/" + next_level}
-            sub_groups[next_level]["count"] += 1
-            if r["has_cover"] and not sub_groups[next_level]["cover_id"]:
-                sub_groups[next_level]["cover_id"] = r["id"]
-            sub_groups[next_level]["authors"].add(r["author"])
-        
-        collections = []
-        for name, info in sorted(sub_groups.items(), key=lambda x: x[0].lower()):
-            author_list = sorted(a for a in info["authors"] if a)[:2]
-            author_str = ", ".join(author_list)
-            if len(info["authors"]) > 2:
-                author_str += f" +{len(info['authors'])-2}"
-            collections.append({
-                "type": "collection",
-                "title": name,
-                "collection_path": info["full_path"],
-                "book_count": info["count"],
-                "cover_book_id": info["cover_id"],
-                "author": author_str,
-            })
-        
-        # Books at this exact level
-        standalone_books = _group_format_variants([dict(r) for r in exact_books])
-        for b in standalone_books:
-            b["type"] = "book"
-        
-        all_items = collections + standalone_books
-    else:
-        # Top level: group by first segment of collection_path, 
-        # plus show standalone books (empty collection_path)
-        
-        all_books = conn.execute(
-            f"SELECT id, title, author, collection_path, has_cover, format, filename, genre FROM books {where}",
-            params
-        ).fetchall()
-        
-        top_groups = {}
-        standalone_ids = []
-        
-        for r in all_books:
-            cp = r["collection_path"]
-            if not cp:
-                standalone_ids.append(r["id"])
-                continue
-            
-            top_level = cp.split("/")[0]
-            if top_level not in top_groups:
-                top_groups[top_level] = {"count": 0, "cover_id": 0, "authors": set(), "has_children": False}
-            top_groups[top_level]["count"] += 1
-            if "/" in cp:
-                top_groups[top_level]["has_children"] = True
-            if r["has_cover"] and not top_groups[top_level]["cover_id"]:
-                top_groups[top_level]["cover_id"] = r["id"]
-            top_groups[top_level]["authors"].add(r["author"])
-        
-        collections = []
-        single_book_groups = []  # groups with only 1 book and no children -> show as book
-        
-        for name, info in top_groups.items():
-            if info["count"] == 1 and not info["has_children"]:
-                # Single book in a "collection" -> show as standalone book
-                single_book_groups.append(name)
-                continue
-            
-            author_list = sorted(a for a in info["authors"] if a)[:2]
-            author_str = ", ".join(author_list)
-            if len(info["authors"]) > 2:
-                author_str += f" +{len(info['authors'])-2}"
-            collections.append({
-                "type": "collection",
-                "title": name,
-                "collection_path": name,
-                "book_count": info["count"],
-                "cover_book_id": info["cover_id"],
-                "author": author_str,
-            })
-        
-        # Get standalone books (no collection_path + single-book groups)
-        if standalone_ids or single_book_groups:
-            extra_where = []
-            extra_params = list(params)
-            if standalone_ids:
-                extra_where.append(f"id IN ({','.join('?' * len(standalone_ids))})")
-                extra_params.extend(standalone_ids)
-            if single_book_groups:
-                extra_where.append(f"collection_path IN ({','.join('?' * len(single_book_groups))})")
-                extra_params.extend(single_book_groups)
-            
-            combined = " OR ".join(extra_where)
-            base_where = f"WHERE ({combined})" if not where else f"{where} AND ({combined})"
-            standalone_rows = conn.execute(
-                f"SELECT * FROM books {base_where}", extra_params
-            ).fetchall()
-        else:
-            standalone_rows = []
-        
-        standalone_books = _group_format_variants([dict(r) for r in standalone_rows])
-        for b in standalone_books:
-            b["type"] = "book"
-        
-        all_items = collections + standalone_books
-    
-    # Sort
-    all_items.sort(key=lambda x: (x.get("title") or "").lower())
-    
-    total = len(all_items)
-    start = (page - 1) * per_page
-    page_items = all_items[start:start + per_page]
 
     return {
         "items": page_items,
