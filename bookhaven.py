@@ -345,6 +345,34 @@ def _base_filename(filename):
 FORMAT_PRIORITY = {'epub': 0, 'cbz': 1, 'cbr': 2, 'pdf': 3, 'mobi': 4}
 
 
+# SQL twins of the two helpers above, used by _books_grouped_payload to group
+# format variants inside SQLite instead of loading the whole table into RAM.
+# Their equivalence is pinned by tests/test_books_grouped_sql.py.
+#
+# _SQL_BASE_EXPR mirrors _base_filename: LIKE is ASCII-case-insensitive by
+# default, which covers the regex's IGNORECASE flag, and length()/substr()
+# count characters (not bytes), so non-ASCII names are cut at the right spot.
+# The % in the patterns is a wildcard in the PATTERN only -- a % or _ stored in
+# filename is never interpreted.
+_SQL_BASE_EXPR = """
+CASE
+  WHEN filename LIKE '%.epub' THEN substr(filename, 1, length(filename) - 5)
+  WHEN filename LIKE '%.mobi' THEN substr(filename, 1, length(filename) - 5)
+  WHEN filename LIKE '%.pdf'  THEN substr(filename, 1, length(filename) - 4)
+  WHEN filename LIKE '%.cbr'  THEN substr(filename, 1, length(filename) - 4)
+  WHEN filename LIKE '%.cbz'  THEN substr(filename, 1, length(filename) - 4)
+  ELSE filename
+END
+"""
+
+# _SQL_PRIO_EXPR mirrors FORMAT_PRIORITY.get(fmt, 9): CASE ... WHEN on a text
+# value is case-SENSITIVE, exactly like the dict lookup.
+_SQL_PRIO_EXPR = """
+CASE format WHEN 'epub' THEN 0 WHEN 'cbz' THEN 1 WHEN 'cbr' THEN 2
+            WHEN 'pdf' THEN 3 WHEN 'mobi' THEN 4 ELSE 9 END
+"""
+
+
 def _group_format_variants(books):
     """Group books sharing the same base filename into one entry with a formats array.
     Returns a deduplicated list; each item keeps the best-format copy as primary."""
