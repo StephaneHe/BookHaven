@@ -154,6 +154,11 @@ def populate(conn, seed=20260814, n_standalone=200, n_collections=30):
                 has_cover=rng.randrange(2),
                 description="d" * 200)
 
+    # risk #10, the real one: a variant inside a MULTI-book collection never
+    # joins a standalone of the same base (they come from different queries).
+    # Appended last so the ids above stay stable.
+    ins.add("Bulk", "Inside Story.mobi", "Inside Story standalone", author="Zola")
+
     conn.commit()
     return ins.n
 

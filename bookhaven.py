@@ -1743,6 +1743,113 @@ def _query_top_collections(conn, where, params):
     return items, single_tops
 
 
+# SQLite's parameter limit is 32766; chunk well below it so a library with a
+# pathological number of one-book collections still works.
+_IN_CHUNK = 500
+
+
+def _in_chunks(values, size=_IN_CHUNK):
+    for i in range(0, len(values), size):
+        yield values[i:i + size]
+
+
+def _query_book_keys(conn, where, params, scopes):
+    """Fetch the light grouping keys of the books in `scopes`, already grouped.
+
+    `scopes` is a list of (sql_condition, condition_params). Returns one entry
+    per format-variant group: {_primary_id, title, formats}. No description, no
+    SELECT * -- the page's rows are hydrated later, in _hydrate_page.
+    """
+    from itertools import groupby
+
+    sql = (f"SELECT id, title, filename, format,"
+           f" {_SQL_BASE_EXPR} AS base, {_SQL_PRIO_EXPR} AS prio"
+           f" FROM books {where} {'AND' if where else 'WHERE'} ({{scope}})"
+           f" ORDER BY base, prio, id")
+    rows = []
+    for scope, scope_params in scopes:
+        rows.extend(conn.execute(sql.format(scope=scope),
+                                 list(params) + list(scope_params)).fetchall())
+    if len(scopes) > 1:
+        # Each chunk is sorted on its own; Python's str order is codepoint
+        # order, i.e. the same BINARY collation SQLite just used.
+        rows.sort(key=lambda r: (r["base"], r["prio"], r["id"]))
+
+    items = []
+    for _base, group in groupby(rows, key=lambda r: r["base"]):
+        variants = list(group)          # already ordered by prio then id
+        items.append({
+            "_primary_id": variants[0]["id"],
+            "title": variants[0]["title"],
+            "formats": [{"id": v["id"], "format": v["format"]} for v in variants],
+        })
+    return items
+
+
+def _hydrate_page(conn, page_items):
+    """Turn the page's light book keys into full rows -- the only SELECT *."""
+    ids = [i["_primary_id"] for i in page_items if "_primary_id" in i]
+    by_id = {}
+    if ids:
+        rows = conn.execute(
+            f"SELECT * FROM books WHERE id IN ({','.join('?' * len(ids))})", ids
+        ).fetchall()
+        by_id = {r["id"]: r for r in rows}
+
+    out = []
+    for item in page_items:
+        if "_primary_id" not in item:
+            out.append(item)            # collection: already complete
+            continue
+        full = dict(by_id[item["_primary_id"]])
+        full["formats"] = item["formats"]
+        full["type"] = "book"
+        out.append(full)
+    return out
+
+
+def _books_grouped_fast(conn, category="", genre="", author="", fmt="",
+                        search="", prefix="", page=1, per_page=50):
+    """SQL-backed implementation of the grouped listing.
+
+    Same three phases as the legacy code, but only light keys ever reach RAM:
+    aggregate the collections and the format-variant groups in SQL, sort and
+    paginate those keys in Python (str.lower() ordering is Unicode-aware where
+    SQLite's lower() is ASCII-only), then hydrate just the requested page.
+    """
+    where, params = _grouped_where(category, genre, author, fmt, search)
+
+    if prefix:
+        raise NotImplementedError("prefix browsing lands in the next step")
+
+    collection_items, single_tops = _query_top_collections(conn, where, params)
+
+    # Standalone books, plus the one-book collections rendered as books.
+    scopes = [(f"collection_path IN ({','.join('?' * len(chunk))})", chunk)
+              for chunk in _in_chunks(single_tops)]
+    if scopes:
+        scopes[0] = ("collection_path = '' OR " + scopes[0][0], scopes[0][1])
+    else:
+        scopes = [("collection_path = ''", [])]
+    book_items = _query_book_keys(conn, where, params, scopes)
+
+    items = collection_items + book_items
+    items.sort(key=lambda x: (x.get("title") or "").lower())
+
+    total = len(items)
+    start = (page - 1) * per_page
+    page_items = _hydrate_page(conn, items[start:start + per_page])
+
+    return {
+        "items": page_items,
+        "total": total,
+        "page": page,
+        "per_page": per_page,
+        "pages": (total + per_page - 1) // per_page,
+        "prefix": prefix,
+    }
+
+
 def _books_grouped_payload(conn, category="", genre="", author="", fmt="",
                            search="", prefix="", page=1, per_page=50):
     """Build the /api/books/grouped response body (pure, no request/response).
