@@ -48,11 +48,20 @@ def normalize(payload):
        test_books_grouped_agg.py.
     2. Order of items that tie on title.lower(): the legacy order came from a
        dict's insertion order. Both sides are re-sorted on a canonical key.
+    3. Order of variants that tie on FORMAT_PRIORITY inside `formats` (same
+       base filename AND same format, e.g. two "top.epub" in different
+       folders): the legacy sort was stable over whatever order the query plan
+       returned. Both sides are re-sorted by (priority, id). The priority
+       order itself -- and therefore the primary -- stays strictly compared.
     """
     payload = jsonable(payload)
     for item in payload["items"]:
         if item["type"] == "collection":
             item["cover_book_id"] = bool(item["cover_book_id"])
+        else:
+            item["formats"] = sorted(
+                item["formats"],
+                key=lambda f: (bookhaven.FORMAT_PRIORITY.get(f["format"], 9), f["id"]))
 
     items, out = payload["items"], []
     i = 0
@@ -89,6 +98,58 @@ def test_top_level_parity_on_every_page(conn):
     total = bookhaven._books_grouped_fast(conn, per_page=7)["total"]
     for page in range(1, (total + 6) // 7 + 1):
         assert_parity(conn, page=page, per_page=7)
+
+
+PREFIXES = [
+    "Collection 01",              # depth 2 underneath
+    "Collection 02",              # depth 3 underneath
+    "Collection 02/Saison 1",     # browsing a sub-level
+    "Collection 00",              # flat collection: only books at this level
+    "Variants Inside",            # multi-format variants at this level
+    "Solo 0",                     # a one-book collection
+    "Nope does not exist",
+    "Collection 01/Saison 9",     # existing top, missing sub-level
+]
+
+
+@pytest.mark.parametrize("prefix", PREFIXES)
+@pytest.mark.parametrize("pagination", PAGINATIONS)
+def test_prefix_parity_matrix(conn, prefix, pagination):
+    assert_parity(conn, prefix=prefix, **pagination)
+
+
+@pytest.mark.parametrize("prefix", PREFIXES[:5])
+@pytest.mark.parametrize("filters", FILTER_COMBOS)
+def test_prefix_parity_under_filters(conn, prefix, filters):
+    kwargs = dict(filters)
+    kwargs["fmt"] = kwargs.pop("format", "")
+    assert_parity(conn, prefix=prefix, per_page=50, **kwargs)
+
+
+@pytest.mark.parametrize("prefix", ["100% Comics", "Under_score"])
+def test_prefix_wildcard_quirk_is_reproduced(conn, prefix):
+    """Risk #9: the legacy LIKE has no ESCAPE, so % and _ in a collection name
+    match siblings. Pre-existing behaviour, deliberately kept identical."""
+    new, old = assert_parity(conn, prefix=prefix, per_page=50)
+    # the sibling's sub-folder leaks in on both sides -- that is the quirk
+    assert len(new["items"]) > 1
+    assert new["items"] == old["items"]
+
+
+def test_prefix_browse_lists_sub_collections_and_books(conn):
+    new = bookhaven._books_grouped_fast(conn, prefix="Collection 02", per_page=50)
+    kinds = {i["type"] for i in new["items"]}
+    assert kinds == {"collection"}
+    for item in new["items"]:
+        assert item["collection_path"].startswith("Collection 02/")
+
+
+def test_prefix_browse_has_no_single_book_promotion(conn):
+    """Unlike the top level, a one-book sub-folder stays a collection."""
+    new = bookhaven._books_grouped_fast(conn, prefix="100% Comics", per_page=50)
+    subs = [i for i in new["items"] if i["type"] == "collection"]
+    assert subs and all(i["book_count"] >= 1 for i in subs)
+    assert any(i["book_count"] == 1 for i in subs)
 
 
 def test_multi_format_group_keeps_the_best_primary(conn):

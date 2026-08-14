@@ -159,6 +159,16 @@ def populate(conn, seed=20260814, n_standalone=200, n_collections=30):
     # Appended last so the ids above stay stable.
     ins.add("Bulk", "Inside Story.mobi", "Inside Story standalone", author="Zola")
 
+    # risk #9: the legacy prefix browse does LIKE prefix||'/%' with no ESCAPE,
+    # so a % or _ in a collection name acts as a wildcard and pulls in
+    # siblings. These two pairs let the parity tests pin that quirk.
+    for name, sub in (("100% Comics", "Sub A"), ("1000 Comics", "Sub B"),
+                      ("Under_score", "Sub C"), ("UnderXscore", "Sub D")):
+        ins.add(name, "top.epub", f"{name} top", author="Zola",
+                collection_path=name, has_cover=1)
+        ins.add(name, "deep.pdf", f"{name} deep", author="Hugo",
+                collection_path=f"{name}/{sub}")
+
     conn.commit()
     return ins.n
 

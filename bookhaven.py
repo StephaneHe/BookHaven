@@ -1743,6 +1743,46 @@ def _query_top_collections(conn, where, params):
     return items, single_tops
 
 
+def _query_sub_collections(conn, where, params, prefix):
+    """Aggregate the next level of sub-folders under `prefix`, in SQL.
+
+    substr() is 1-based, so the remainder after "prefix/" starts at
+    len(prefix) + 2 -- the exact equivalent of the legacy 0-based
+    collection_path[len(prefix) + 1:].
+
+    The LIKE deliberately carries no ESCAPE clause: the legacy code had none,
+    so a % or _ inside a collection name acts as a wildcard and pulls in
+    siblings. Reproducing that keeps parity; fixing it is a behaviour change
+    for another pass.
+    """
+    rows = conn.execute(f"""
+        WITH sub AS (
+            SELECT substr(collection_path, ? + 2) AS rest, id, author, has_cover
+            FROM books
+            {where} {'AND' if where else 'WHERE'} collection_path LIKE ?
+        )
+        SELECT CASE WHEN instr(rest, '/') > 0
+                    THEN substr(rest, 1, instr(rest, '/') - 1)
+                    ELSE rest
+               END                                               AS next_level,
+               COUNT(*)                                          AS book_count,
+               COALESCE(MIN(CASE WHEN has_cover THEN id END), 0) AS cover_book_id,
+               json_group_array(DISTINCT author)                 AS authors_json
+        FROM sub
+        GROUP BY next_level
+        ORDER BY next_level
+    """, [len(prefix)] + list(params) + [prefix + '/%']).fetchall()
+
+    return [{
+        "type": "collection",
+        "title": r["next_level"],
+        "collection_path": prefix + "/" + r["next_level"],
+        "book_count": r["book_count"],
+        "cover_book_id": r["cover_book_id"],
+        "author": _collection_author_label(json.loads(r["authors_json"])),
+    } for r in rows]
+
+
 # SQLite's parameter limit is 32766; chunk well below it so a library with a
 # pathological number of one-book collections still works.
 _IN_CHUNK = 500
@@ -1820,17 +1860,21 @@ def _books_grouped_fast(conn, category="", genre="", author="", fmt="",
     where, params = _grouped_where(category, genre, author, fmt, search)
 
     if prefix:
-        raise NotImplementedError("prefix browsing lands in the next step")
-
-    collection_items, single_tops = _query_top_collections(conn, where, params)
-
-    # Standalone books, plus the one-book collections rendered as books.
-    scopes = [(f"collection_path IN ({','.join('?' * len(chunk))})", chunk)
-              for chunk in _in_chunks(single_tops)]
-    if scopes:
-        scopes[0] = ("collection_path = '' OR " + scopes[0][0], scopes[0][1])
+        # Browsing inside a collection: sub-folders, then the books sitting at
+        # this exact level. No one-book promotion here -- the legacy prefix
+        # branch had none, every sub-folder stays a collection.
+        collection_items = _query_sub_collections(conn, where, params, prefix)
+        scopes = [("collection_path = ?", [prefix])]
     else:
-        scopes = [("collection_path = ''", [])]
+        collection_items, single_tops = _query_top_collections(conn, where, params)
+        # Standalone books, plus the one-book collections rendered as books.
+        scopes = [(f"collection_path IN ({','.join('?' * len(chunk))})", chunk)
+                  for chunk in _in_chunks(single_tops)]
+        if scopes:
+            scopes[0] = ("collection_path = '' OR " + scopes[0][0], scopes[0][1])
+        else:
+            scopes = [("collection_path = ''", [])]
+
     book_items = _query_book_keys(conn, where, params, scopes)
 
     items = collection_items + book_items
