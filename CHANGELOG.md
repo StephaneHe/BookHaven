@@ -5,6 +5,54 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.0] - 2026-08-14
+
+Optimisation de `GET /api/books/grouped`, l'endpoint qui alimente la page
+d'accueil. Développée en TDD contre une copie gelée de l'implémentation 2.2.0
+(`tests/legacy_grouped.py`) servant d'oracle de parité.
+
+### Changed
+- **`/api/books/grouped` ne charge plus toute la table en mémoire** : l'agrégation
+  des collections et le regroupement des variantes de format sont faits en SQL,
+  et l'hydratation (`SELECT *`, qui trimballe la colonne `description`) est
+  limitée à la page demandée. Sur la bibliothèque réelle (9 512 livres, 3 158
+  items au niveau racine) : ~2× plus rapide (≈100 ms → ≈45 ms). Sur une base
+  synthétique de 10 000 livres : 13 400 lignes lues → 3 700, dont 3 400 lignes
+  complètes → au plus `per_page`.
+- Le tri final reste en Python (`title.lower()`) et non en SQL : `lower()` SQLite
+  ne replie que l'ASCII, un `ORDER BY lower(title)` réordonnerait une
+  bibliothèque française (« École », « Éric »).
+- **Réponse JSON inchangée**, vérifiée contre l'oracle sur fixtures (matrice
+  filtres × pagination × préfixes) et sur la base de production (24/24
+  combinaisons identiques). Trois divergences volontaires, toutes des valeurs
+  qui dépendaient auparavant du plan d'exécution SQLite et sont désormais
+  déterministes :
+  - `cover_book_id` d'une collection = plus petit id ayant une couverture
+    (avant : « la première ligne rencontrée ») — impact purement visuel, sur
+    certaines vignettes de collections filtrées ;
+  - l'ordre relatif de deux items au titre identique est désormais stable ;
+  - l'ordre des variantes de même priorité de format dans `formats` (deux
+    fichiers de même nom de base ET de même format) est désormais trié par id.
+  Sur la base de production, seule la deuxième s'observe réellement (19/24
+  combinaisons sont identiques octet pour octet, les 5 autres ne diffèrent que
+  par l'ordre de deux livres partageant exactement le même titre).
+- La connexion SQLite de l'endpoint est désormais fermée aussi sur le chemin
+  d'erreur.
+
+### Added
+- Index `idx_books_collection_path` sur `books(collection_path)`.
+- `scripts/check_grouped_parity.py` : compare l'endpoint à l'implémentation 2.2.0
+  sur la vraie base, en **lecture seule** (`file:...?mode=ro`).
+
+### Fixed
+- Rien : la parité était l'objectif. Deux bizarreries pré-existantes sont
+  **volontairement conservées** et désormais couvertes par des tests, faute de
+  quoi elles auraient disparu par accident : la navigation par `prefix` fait un
+  `LIKE prefix || '/%'` sans `ESCAPE` (un `%` ou `_` dans un nom de collection
+  agit donc en joker et fait apparaître des collections voisines), et un livre
+  isolé fusionne avec la variante d'une collection mono-livre de même nom de
+  base. À traiter séparément, en connaissance de cause.
+
 ## [2.2.0] - 2026-08-14
 
 Seconde passe de remédiation TDD (revue critique n°2). Le PIN `BOOKHAVEN_PIN`
