@@ -1658,14 +1658,8 @@ def api_scan_stop():
 
 
 
-def _books_grouped_payload(conn, category="", genre="", author="", fmt="",
-                           search="", prefix="", page=1, per_page=50):
-    """Build the /api/books/grouped response body (pure, no request/response).
-
-    Kept separate from the route so it can be exercised directly and compared
-    against the frozen v2.2.0 oracle in tests/legacy_grouped.py.
-    """
-    # Build WHERE clause for filters
+def _grouped_where(category="", genre="", author="", fmt="", search=""):
+    """Build the shared WHERE clause of /api/books/grouped. Returns (sql, params)."""
     where_parts = []
     params = []
     if category:
@@ -1687,6 +1681,76 @@ def _books_grouped_payload(conn, category="", genre="", author="", fmt="",
         params.extend([_like(search)] * 4)
 
     where = ("WHERE " + " AND ".join(where_parts)) if where_parts else ""
+    return where, params
+
+
+def _collection_author_label(authors):
+    """Render the "A, B +N" byline of a collection.
+
+    N counts EVERY distinct author value including the empty string, which is
+    what the legacy set()-based code did; only the display list drops empties.
+    """
+    label = ", ".join(sorted(a for a in authors if a)[:2])
+    if len(authors) > 2:
+        label += f" +{len(authors) - 2}"
+    return label
+
+
+# First path segment of collection_path -- the top-level collection name.
+_SQL_TOP_EXPR = """
+CASE WHEN instr(collection_path, '/') > 0
+     THEN substr(collection_path, 1, instr(collection_path, '/') - 1)
+     ELSE collection_path
+END
+"""
+
+
+def _query_top_collections(conn, where, params):
+    """Aggregate the top-level collections in SQL (one row per collection).
+
+    Returns (collection_items, single_tops) where single_tops holds the names
+    of one-book childless groups: those are rendered as books, not folders.
+    cover_book_id is MIN(id) among rows with a cover -- the legacy "first row
+    scanned" depended on the query plan; this is the same thing, made
+    deterministic.
+    """
+    rows = conn.execute(f"""
+        SELECT {_SQL_TOP_EXPR}                                           AS top,
+               COUNT(*)                                                  AS book_count,
+               MAX(CASE WHEN instr(collection_path, '/') > 0
+                        THEN 1 ELSE 0 END)                               AS has_children,
+               COALESCE(MIN(CASE WHEN has_cover THEN id END), 0)         AS cover_book_id,
+               json_group_array(DISTINCT author)                         AS authors_json
+        FROM books
+        {where} {'AND' if where else 'WHERE'} collection_path <> ''
+        GROUP BY top
+        ORDER BY top
+    """, params).fetchall()
+
+    items, single_tops = [], []
+    for r in rows:
+        if r["book_count"] == 1 and not r["has_children"]:
+            single_tops.append(r["top"])
+            continue
+        items.append({
+            "type": "collection",
+            "title": r["top"],
+            "collection_path": r["top"],
+            "book_count": r["book_count"],
+            "cover_book_id": r["cover_book_id"],
+            "author": _collection_author_label(json.loads(r["authors_json"])),
+        })
+    return items, single_tops
+
+
+def _books_grouped_payload(conn, category="", genre="", author="", fmt="",
+                           search="", prefix="", page=1, per_page=50):
+    """Build the /api/books/grouped response body (pure, no request/response).
+
+    Kept separate from the route so it can be exercised directly and compared
+    against the frozen v2.2.0 oracle in tests/legacy_grouped.py.
+    """
+    where, params = _grouped_where(category, genre, author, fmt, search)
 
     if prefix:
         # Browsing inside a collection: show next level
