@@ -38,7 +38,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.3.0"
+__version__ = "2.3.1"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -414,11 +414,19 @@ def login_required(f):
 
 # Brute-force guard for the login PIN: BOOKHAVEN_PIN is a short numeric PIN,
 # so unlimited attempts from the LAN would fall in seconds. After
-# LOGIN_MAX_FAILURES failed PIN attempts from one IP, that IP is locked out
+# LOGIN_MAX_FAILURES *distinct* wrong PINs from one IP, that IP is locked out
 # for LOGIN_LOCKOUT_SECONDS — even if it then supplies the correct PIN.
+#
+# Why *distinct* PINs, and why skip the empty one: a real brute-force must try
+# different PINs to search the space, so counting distinct guesses caps it just
+# as tightly (5 tries out of 10 000). But a *stuck* client — e.g. an app built
+# before the PIN existed, replaying the same empty body on every launch — is not
+# searching anything; counting its repeats is what let it exhaust the shared
+# VPN IP's budget and lock out the human on the browser. So identical
+# repeats don't advance the counter, and an empty/absent PIN never counts at all.
 LOGIN_MAX_FAILURES = 5
 LOGIN_LOCKOUT_SECONDS = 300
-_failed_logins = {}  # ip -> {"count": int, "locked_until": float}
+_failed_logins = {}  # ip -> {"pins": set[str], "locked_until": float}
 _failed_logins_lock = threading.Lock()
 
 
@@ -434,15 +442,28 @@ def _login_blocked(ip):
         return False
 
 
-def _record_login_failure(ip):
+def _record_login_failure(ip, pin):
+    """Count one failed PIN attempt from `ip`, using the *distinct non-empty*
+    PIN model described above. `pin` is the value the client supplied."""
+    if not isinstance(pin, str) or not pin:
+        return  # misconfigured/probing client, not a guess at the real PIN
+    digest = hashlib.sha256(pin.encode("utf-8")).hexdigest()
     with _failed_logins_lock:
-        entry = _failed_logins.setdefault(ip, {"count": 0, "locked_until": 0.0})
-        entry["count"] += 1
-        if entry["count"] >= LOGIN_MAX_FAILURES:
+        entry = _failed_logins.setdefault(ip, {"pins": set(), "locked_until": 0.0})
+        entry["pins"].add(digest)  # a repeat of a seen PIN is a no-op
+        if len(entry["pins"]) >= LOGIN_MAX_FAILURES:
             entry["locked_until"] = time.time() + LOGIN_LOCKOUT_SECONDS
             logger.warning(
-                f"PIN lockout for {ip}: {entry['count']} failed attempts, "
+                f"PIN lockout for {ip}: {len(entry['pins'])} distinct wrong PINs, "
                 f"blocked for {LOGIN_LOCKOUT_SECONDS}s")
+
+
+def _supplied_pin(data):
+    """The PIN string a request carried, or '' if absent/malformed."""
+    if isinstance(data, dict):
+        pin = data.get("pin", "")
+        return pin if isinstance(pin, str) else ""
+    return ""
 
 
 def _clear_login_failures(ip):
@@ -481,7 +502,7 @@ def api_login():
         return jsonify(_LOCKOUT_RESPONSE[0]), _LOCKOUT_RESPONSE[1]
     data = request.get_json()
     if not _check_pin(data):
-        _record_login_failure(ip)
+        _record_login_failure(ip, _supplied_pin(data))
         return jsonify({"error": "Invalid PIN"}), 403
     username = data.get("username", "")
 
@@ -545,7 +566,7 @@ def api_create_user():
         return jsonify(_LOCKOUT_RESPONSE[0]), _LOCKOUT_RESPONSE[1]
     data = request.get_json()
     if not _check_pin(data):
-        _record_login_failure(ip)
+        _record_login_failure(ip, _supplied_pin(data))
         return jsonify({"error": "Invalid PIN"}), 403
     name = data.get("name", "").strip()
     if not name:

@@ -5,6 +5,23 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.1] - 2026-08-17
+
+### Security
+- **Durcissement du verrou anti brute-force du PIN de connexion** pour qu'un
+  client bloqué ne verrouille plus le client web humain partageant son IP (cas
+  réel : l'app Android, buildée avant l'activation du PIN, rejouait
+  `/api/auth/login` **sans PIN** à chaque lancement ; ces échecs se cumulaient
+  sur l'IP VPN du téléphone avec les essais du navigateur → lockout en
+  ~4 essais). Deux règles, toutes deux sûres contre le brute-force :
+  - un PIN **vide ou absent** ne compte plus jamais comme un échec (ce n'est pas
+    une tentative de deviner le PIN configuré, qui est non vide) ;
+  - seuls les **PIN distincts** non vides font avancer le compteur : répéter le
+    même mauvais PIN est inoffensif, alors qu'un vrai brute-force doit essayer
+    des PIN différents pour explorer l'espace. Le seuil reste 5 (désormais 5
+    PIN distincts) et le verrou 300 s. La recherche exhaustive d'un PIN 4
+    chiffres est donc toujours coupée à 5 essais sur 10 000.
+
 ## [2.3.0] - 2026-08-14
 
 Optimisation de `GET /api/books/grouped`, l'endpoint qui alimente la page
