@@ -20,7 +20,11 @@ sealed class LoginState {
     object Loading : LoginState()
     object NoServerUrl : LoginState()
     object LoggedIn : LoginState()
-    data class Users(val users: List<String>, val offline: Boolean) : LoginState()
+    data class Users(
+        val users: List<String>,
+        val offline: Boolean,
+        val pinRequired: Boolean = false
+    ) : LoginState()
     data class Error(val message: String) : LoginState()
 }
 
@@ -67,17 +71,27 @@ class LoginViewModel @Inject constructor(
                 return@launch
             }
 
-            // Session gone, but login is password-less: silently recreate it. (Fix 2)
+            // Session gone. Try to silently recreate it — but ONLY if we can send a
+            // valid-looking PIN. Blindly re-POSTing /api/auth/login with no PIN on
+            // every launch is exactly what piled failed attempts onto the shared
+            // VPN IP and locked out the web client. When a PIN is required and
+            // we have none stored, we make NO attempt and just show the account list.
             if (currentUser != null) {
-                if (repo.login(currentUser).isSuccess) {
-                    _state.value = LoginState.LoggedIn
-                    return@launch
+                val requiresPin = runCatching { repo.pinRequired() }.getOrDefault(false)
+                val pin = storedPin()
+                if (!requiresPin || pin != null) {
+                    if (repo.login(currentUser, pin).isSuccess) {
+                        _state.value = LoginState.LoggedIn
+                        return@launch
+                    }
+                    // Failed: the stored PIN may be stale, or the user was deleted.
+                    // Drop the PIN so we don't keep replaying a wrong one, then fall
+                    // through to the account list rather than retrying in a loop.
+                    prefs.edit().remove("server_pin").apply()
                 }
-                // User no longer exists server-side — forget it and show the account list.
-                prefs.edit().remove("current_user").apply()
             }
 
-            // 401 with no recoverable session == "not logged in" → accounts, no error. (Fix 1)
+            // Not logged in → accounts, no error. (Fix 1)
             loadUsersOnline()
         }
     }
@@ -105,7 +119,8 @@ class LoginViewModel @Inject constructor(
         runCatching { repo.getUsers().map { it.name } }
             .onSuccess { users ->
                 cacheUsers(users)
-                _state.value = LoginState.Users(users, offline = false)
+                val requiresPin = runCatching { repo.pinRequired() }.getOrDefault(false)
+                _state.value = LoginState.Users(users, offline = false, pinRequired = requiresPin)
             }
             .onFailure { e ->
                 Log.e(TAG, "getUsers() failed", e)
@@ -136,29 +151,64 @@ class LoginViewModel @Inject constructor(
         false
     }
 
-    fun login(username: String, offline: Boolean) {
+    /**
+     * @param pin the PIN typed on the login screen; blank falls back to the one
+     *            remembered from a previous successful login.
+     */
+    fun login(username: String, pin: String, offline: Boolean) {
         viewModelScope.launch {
             if (offline) {
                 prefs.edit().putString("current_user", username).apply()
                 _loginResult.value = Result.success(username)
                 return@launch
             }
-            repo.login(username).also { result ->
+            val effectivePin = pin.trim().ifEmpty { storedPin() }
+            repo.login(username, effectivePin).also { result ->
                 result.onSuccess { name ->
+                    // Remember the working PIN so the next launch logs in silently
+                    // (and never blindly retries a wrong/absent one).
+                    if (!effectivePin.isNullOrBlank())
+                        prefs.edit().putString("server_pin", effectivePin).apply()
                     prefs.edit().putString("current_user", name.ifBlank { username }).apply()
+                    _loginResult.value = Result.success(name.ifBlank { username })
+                }.onFailure { e ->
+                    if (isForbidden(e)) {
+                        // Wrong or missing PIN: forget it so we re-prompt, and report
+                        // it clearly instead of as a generic failure.
+                        prefs.edit().remove("server_pin").apply()
+                        _loginResult.value = Result.failure(
+                            InvalidPinException("Incorrect PIN — check the PIN and try again"))
+                    } else {
+                        _loginResult.value = Result.failure(e)
+                    }
                 }
-                _loginResult.value = result
             }
         }
     }
 
-    fun createUser(username: String) {
+    fun createUser(username: String, pin: String) {
         viewModelScope.launch {
-            repo.createUser(username)
-                .onSuccess { loadUsers() }
-                .onFailure { _state.value = LoginState.Error("Create failed: ${it.message}") }
+            val effectivePin = pin.trim().ifEmpty { storedPin() }
+            repo.createUser(username, effectivePin)
+                .onSuccess {
+                    if (!effectivePin.isNullOrBlank())
+                        prefs.edit().putString("server_pin", effectivePin).apply()
+                    loadUsers()
+                }
+                .onFailure { e ->
+                    _state.value = if (isForbidden(e))
+                        LoginState.Error("Incorrect PIN — check the PIN and try again")
+                    else
+                        LoginState.Error("Create failed: ${e.message}")
+                }
         }
     }
+
+    private fun storedPin(): String? =
+        prefs.getString("server_pin", null)?.takeIf { it.isNotBlank() }
+
+    private fun isForbidden(e: Throwable): Boolean =
+        e is retrofit2.HttpException && e.code() == 403
 
     private fun cacheUsers(users: List<String>) =
         prefs.edit().putString("cached_users", users.joinToString(",")).apply()
@@ -166,3 +216,6 @@ class LoginViewModel @Inject constructor(
     private fun getCachedUsers(): List<String> =
         (prefs.getString("cached_users", "") ?: "").split(",").filter { it.isNotBlank() }
 }
+
+/** Thrown when the server rejects the PIN (HTTP 403), to drive a clear message. */
+class InvalidPinException(message: String) : Exception(message)

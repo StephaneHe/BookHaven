@@ -1,5 +1,25 @@
 # Changelog — BookHaven Android
 
+## [1.3.0] - 2026-08-17
+
+### Fixed
+- **Connexion impossible (403 Forbidden) depuis l'activation du PIN serveur.**
+  Le client avait été buildé avant que `BOOKHAVEN_PIN` ne soit activé : il
+  postait `/api/auth/login` **sans champ `pin`**, que le serveur rejette en 403.
+- **Verrouillage prématuré du client web sur la même IP.** À chaque lancement,
+  l'app rejouait silencieusement `/api/auth/login` sans PIN ; ces échecs
+  automatiques se cumulaient, sur l'IP VPN partagée du téléphone, avec les
+  essais humains du navigateur et déclenchaient le lockout brute-force
+  (5 échecs / IP) en quelques essais. L'app ne tente plus de reconnexion
+  silencieuse quand un PIN est requis mais qu'aucun PIN valide n'est mémorisé.
+
+### Added
+- Champ **PIN** sur l'écran de connexion, affiché uniquement si le serveur le
+  requiert (`GET /api/auth/pin-required`). Le PIN est envoyé à
+  `/api/auth/login` et `/api/auth/users`, et mémorisé après un login réussi pour
+  les reconnexions silencieuses suivantes. Un PIN refusé (403) est oublié et
+  signalé clairement (« Incorrect PIN »).
+
 ## [1.0.0] - 2026-07-14
 
 ### Added

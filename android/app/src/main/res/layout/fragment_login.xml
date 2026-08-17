@@ -79,6 +79,26 @@
 
     </LinearLayout>
 
+    <EditText
+        android:id="@+id/etPin"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="PIN"
+        android:inputType="numberPassword"
+        android:autofillHints="password"
+        android:maxLength="32"
+        android:layout_marginBottom="12dp"
+        android:visibility="gone" />
+
+    <TextView
+        android:id="@+id/tvPinHint"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Enter the PIN, then tap your account"
+        android:textSize="13sp"
+        android:layout_marginBottom="8dp"
+        android:visibility="gone" />
+
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/rvUsers"
         android:layout_width="match_parent"

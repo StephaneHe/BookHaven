@@ -1,6 +1,9 @@
-# Data & cache (generated at runtime)
-data/
-cache/
+# Data & cache (generated at runtime, at the repo root only).
+# Anchored with a leading slash: an unanchored "data/" also matched the Android
+# source package android/.../data/, silently keeping its whole data layer
+# (api, repository, db) out of git.
+/data/
+/cache/
 *.db
 
 # Python virtual env

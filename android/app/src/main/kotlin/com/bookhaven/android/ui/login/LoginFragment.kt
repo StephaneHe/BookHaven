@@ -69,9 +69,14 @@ class LoginFragment : Fragment() {
                         b.progressBar.visibility = View.GONE
                         isOffline = state.offline
                         b.tvOfflineBadge.visibility = if (state.offline) View.VISIBLE else View.GONE
+                        val showPin = state.pinRequired && !state.offline
+                        b.etPin.visibility = if (showPin) View.VISIBLE else View.GONE
+                        b.tvPinHint.visibility = if (showPin) View.VISIBLE else View.GONE
                         b.rvUsers.visibility = View.VISIBLE
                         b.rvUsers.layoutManager = LinearLayoutManager(requireContext())
-                        b.rvUsers.adapter = UserAdapter(state.users) { vm.login(it, isOffline) }
+                        b.rvUsers.adapter = UserAdapter(state.users) {
+                            vm.login(it, b.etPin.text?.toString().orEmpty(), isOffline)
+                        }
                     }
                     is LoginState.Error -> {
                         b.progressBar.visibility = View.GONE
@@ -85,7 +90,11 @@ class LoginFragment : Fragment() {
             vm.loginResult.collect { result ->
                 result ?: return@collect
                 result.onSuccess { findNavController().navigate(R.id.action_login_to_main) }
-                    .onFailure { requireContext().showError("Login failed: ${it.message}") }
+                    .onFailure {
+                        val msg = if (it is InvalidPinException) it.message.orEmpty()
+                                  else "Login failed: ${it.message}"
+                        requireContext().showError(msg)
+                    }
             }
         }
     }
@@ -121,7 +130,7 @@ class LoginFragment : Fragment() {
             .setView(et)
             .setPositiveButton("Create") { _, _ ->
                 val name = et.text.toString().trim()
-                if (name.isNotEmpty()) vm.createUser(name)
+                if (name.isNotEmpty()) vm.createUser(name, b.etPin.text?.toString().orEmpty())
             }
             .setNegativeButton("Cancel", null)
             .show()
