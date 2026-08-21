@@ -5,6 +5,20 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.3.2] - 2026-08-21
+
+### Fixed
+- **Lecteur EPUB web : la progression ne pouvait plus être écrasée par une
+  position vide.** Un événement `relocated` transitoire sans CFI (émis par
+  epub.js pendant le reflow d'un changement de taille de police / resize) était
+  persisté tel quel, remplaçant un CFI valide par une chaîne vide et figeant la
+  progression enregistrée à la position de départ de la session. Désormais un
+  `relocated` sans CFI est ignoré, et `saveCurrentProgress()` refuse d'écrire une
+  `current_location` vide (ne jamais renvoyer le lecteur — ou l'app Android qui
+  se synchronise depuis le serveur — au début). La position EPUB reste un CFI,
+  indépendant de la taille de police. Diagnostic vérifié sur le vrai lecteur
+  (port 8097) : la progression continue d'avancer après un changement de police.
+
 ## [2.3.1] - 2026-08-17
 
 ### Security

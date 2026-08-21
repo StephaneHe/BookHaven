@@ -2350,16 +2350,22 @@ async function openEpub(bookId) {
     // Track location changes for progress
     let firstRelocate = true;
     rendition.on('relocated', (location) => {
+      // A font-size change (or any reflow/resize) fires relocated too; epub.js
+      // can emit a transient event with no anchor mid-reflow. Persisting that
+      // would overwrite a good CFI with nothing, freezing saved progress at the
+      // session start — so ignore any relocate without a real CFI.
+      const cfi = location && location.start && location.start.cfi;
+      if (!cfi) return;
       if (book.locations && book.locations.length()) {
-        const pct = book.locations.percentageFromCfi(location.start.cfi);
-        updateProgress(Math.round(pct * 100), location.start.cfi);
+        const pct = book.locations.percentageFromCfi(cfi);
+        updateProgress(Math.round(pct * 100), cfi);
         if (!_seekDragging) {
           seekbar.value = Math.round(pct * 1000);
-          const locIdx = book.locations.locationFromCfi(location.start.cfi);
+          const locIdx = book.locations.locationFromCfi(cfi);
           pagePill.textContent = (locIdx !== undefined ? locIdx + 1 : '—') + ' / ' + book.locations.total;
         }
       } else {
-        updateProgress(0, location.start.cfi);
+        updateProgress(0, cfi);
       }
       // Save immediately on first page display so it appears in Continue Reading
       if (firstRelocate) {
@@ -2667,6 +2673,10 @@ function updateProgress(pct, location) {
 
 async function saveCurrentProgress() {
   if (!state.currentBook || state._lastProgress === undefined) return;
+  // Never overwrite a stored position with an empty one: a blank location would
+  // send the reader (and the Android app that syncs from the server) back to the
+  // start. If we have no real location yet, keep whatever the server holds.
+  if (!state._lastLocation) return;
   try {
     await fetch(`/api/books/${state.currentBook.id}/progress`, {
       method: 'PUT',

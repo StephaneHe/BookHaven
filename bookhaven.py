@@ -38,7 +38,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.3.1"
+__version__ = "2.3.2"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
