@@ -78,6 +78,42 @@ class DownloadRepository @Inject constructor(
     suspend fun getProgress(bookId: Int): ReadingProgress? =
         readingProgressDao.getById(bookId)
 
+    /**
+     * Reading position to open a book AT, reconciling this device with the server.
+     *
+     * The local Room row alone is stale the moment the book is read on another
+     * device (e.g. the web reader): opening here would jump to wherever THIS
+     * device last was, not the newest position. So:
+     *
+     *  - unpushed local progress (`pendingSync`) wins — it isn't on the server yet;
+     *  - otherwise the local row is already synced, which means the server holds
+     *    at least what we last pushed and possibly a newer position from another
+     *    device, so the server value wins. We mirror it back into Room so the
+     *    reader and later reads stay consistent.
+     *
+     * Falls back to whatever local we have if the server is unreachable or has no
+     * saved position (offline, or never read anywhere).
+     */
+    suspend fun resolveProgress(bookId: Int): ReadingProgress? {
+        val local = readingProgressDao.getById(bookId)
+        if (local?.pendingSync == true) return local
+
+        val remote = runCatching { api.getProgress(bookId) }.getOrNull()
+        val remoteLoc = remote?.currentLocation.orEmpty()
+        if (remote != null && remoteLoc.isNotBlank() && remoteLoc != local?.position) {
+            val merged = ReadingProgress(
+                bookId = bookId,
+                position = remoteLoc,
+                progress = remote.progress,
+                updatedAt = System.currentTimeMillis(),
+                pendingSync = false,
+            )
+            readingProgressDao.upsert(merged)
+            return merged
+        }
+        return local
+    }
+
     suspend fun getDownload(bookId: Int): DownloadedBook? =
         downloadedBookDao.getById(bookId)
 

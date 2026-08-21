@@ -76,8 +76,8 @@ class ComicReaderFragment : Fragment() {
             b.tvPageNum.text = "1 / ${pages.size}"
             b.comicProgressBar.max = 100
 
-            // Restore saved position
-            val saved = downloadRepo.getProgress(bookId)
+            // Restore saved position, reconciled with the server (see resolveProgress).
+            val saved = downloadRepo.resolveProgress(bookId)
             val startPage = saved?.position?.toIntOrNull() ?: 0
             if (startPage > 0) b.viewPager.setCurrentItem(startPage, false)
 

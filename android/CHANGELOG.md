@@ -1,5 +1,20 @@
 # Changelog — BookHaven Android
 
+## [1.4.0] - 2026-08-21
+
+### Fixed
+- **Un livre lu sur le web s'ouvrait sur le téléphone à la position de DÉPART
+  de la session web, pas à la position courante.** Les lecteurs (EPUB/PDF/CBZ)
+  restauraient uniquement la progression **locale** (Room) et ne récupéraient
+  jamais la position enregistrée côté serveur, donc toute lecture faite sur un
+  autre appareil était ignorée. `DownloadRepository.resolveProgress()` réconcilie
+  désormais local et serveur à l'ouverture : une progression locale non encore
+  poussée (`pendingSync`) l'emporte ; sinon la ligne locale est déjà synchronisée
+  et c'est la position **serveur** (potentiellement avancée par le web) qui est
+  adoptée, puis recopiée en local. La position EPUB reste un **CFI**
+  (indépendant de la taille de police), donc le changement de police sur le web
+  n'affecte pas la reprise sur mobile.
+
 ## [1.3.0] - 2026-08-17
 
 ### Fixed

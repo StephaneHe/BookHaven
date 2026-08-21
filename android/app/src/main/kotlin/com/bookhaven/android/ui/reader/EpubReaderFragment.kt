@@ -99,8 +99,10 @@ class EpubReaderFragment : Fragment() {
         CookieManager.getInstance().setAcceptThirdPartyCookies(b.webView, true)
 
         viewLifecycleOwner.lifecycleScope.launch {
-            // Restore reading position
-            downloadRepo.getProgress(bookId)?.let { saved ->
+            // Restore reading position, reconciled with the server so a book
+            // read on another device (e.g. the web reader) opens at the newest
+            // position, not this device's stale local one.
+            downloadRepo.resolveProgress(bookId)?.let { saved ->
                 if (saved.position.isNotEmpty()) {
                     lastCfi = saved.position
                     lastProgress = saved.progress

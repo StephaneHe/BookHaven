@@ -13,8 +13,8 @@ android {
         applicationId = "com.bookhaven.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 52
-        versionName = "1.3.0"
+        versionCode = 53
+        versionName = "1.4.0"
     }
 
     buildTypes {

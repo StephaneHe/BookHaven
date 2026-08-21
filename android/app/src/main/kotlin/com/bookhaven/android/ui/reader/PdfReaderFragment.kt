@@ -103,8 +103,8 @@ class PdfReaderFragment : Fragment() {
             b.pdfProgressBar.max = 100
             b.rvPdf.adapter = PdfPageAdapter(renderer!!, pageCount)
 
-            // Restore saved position
-            val saved = downloadRepo.getProgress(bookId)
+            // Restore saved position, reconciled with the server (see resolveProgress).
+            val saved = downloadRepo.resolveProgress(bookId)
             if (saved != null && saved.position.isNotEmpty()) {
                 val page = saved.position.toIntOrNull() ?: 0
                 if (page > 0) b.rvPdf.scrollToPosition(page)
