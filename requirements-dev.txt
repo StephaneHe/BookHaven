@@ -1,0 +1,4 @@
+# Development / test dependencies (see README "Testing").
+pytest>=8,<9
+playwright>=1.40          # browser UI tests; run `python -m playwright install chromium`
+pip-audit>=2.7            # dependency vulnerability scan

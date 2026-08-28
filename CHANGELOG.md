@@ -5,6 +5,23 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.0] - 2026-08-28
+
+### Added
+- **`README.md` (anglais)** décrivant l'application, l'installation, la
+  configuration et le modèle de sécurité, avec des captures d'écran générées
+  depuis une instance de démo peuplée uniquement de livres du **domaine public**
+  (Project Gutenberg) — `docs/screenshots/`.
+- **`LICENSE`** (MIT) et **`SECURITY.md`** (périmètre, durcissements en place,
+  limites assumées du déploiement réseau-privé).
+- **`requirements-dev.txt`** (pytest, playwright, pip-audit).
+
+### Changed
+- **Harnais de test durci** : port de test surchargeable via
+  `BOOKHAVEN_TEST_PORT`, et la sonde de démarrage vérifie désormais
+  `/api/version` (un service tiers déjà lié au port ne peut plus être pris pour
+  le serveur BookHaven, ce qui faussait silencieusement les tests navigateur).
+
 ## [2.4.0] - 2026-08-28
 
 Préparation à la publication (dépôt portfolio). Aucune donnée de la collection

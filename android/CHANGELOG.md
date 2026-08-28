@@ -1,5 +1,15 @@
 # Changelog — BookHaven Android
 
+## [1.5.0] - 2026-08-28
+
+### Security
+- Remplacement du `android:usesCleartextTraffic="true"` global par un
+  `network_security_config.xml` dédié et documenté. Le cleartext reste permis
+  pour joindre le serveur auto-hébergé (adresse privée/VPN en HTTP), mais la
+  permission est désormais explicite et centralisée. `android:allowBackup`
+  passe à `false` (la base Room locale et les préférences ne partent plus dans
+  les sauvegardes Android).
+
 ## [1.4.0] - 2026-08-21
 
 ### Fixed

@@ -13,8 +13,11 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Interpreter: BOOKHAVEN_PYTHON overrides, else reuse the one running pytest.
 PYTHON = os.environ.get("BOOKHAVEN_PYTHON", sys.executable)
 SERVER_SCRIPT = os.path.join(_REPO_ROOT, "bookhaven.py")
-TEST_PORT = 8098
-BASE_URL = f"http://localhost:{TEST_PORT}"
+# Test port: override with BOOKHAVEN_TEST_PORT if 8098 is taken by another
+# local service. Use 127.0.0.1 (not "localhost", which some browsers resolve
+# to IPv6 ::1 while waitress binds IPv4).
+TEST_PORT = int(os.environ.get("BOOKHAVEN_TEST_PORT", "8098"))
+BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
 
 @pytest.fixture(autouse=True)
 def _config_module_identity():
@@ -43,13 +46,22 @@ DESKTOP = {"width": 1280, "height": 800}
 
 
 def _wait_for_server(url, timeout=15):
+    """Wait until *our* BookHaven answers on `url`.
+
+    Probes /api/version and requires a JSON version back, so a foreign service
+    already bound to the test port (a false 200 on "/") can't be mistaken for a
+    started server — that used to yield a live URL pointing at the wrong app.
+    """
+    import json
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            urlopen(url, timeout=2)
-            return True
-        except (URLError, OSError):
-            time.sleep(0.3)
+            with urlopen(url + "/api/version", timeout=2) as r:
+                if json.loads(r.read().decode("utf-8")).get("version"):
+                    return True
+        except (URLError, OSError, ValueError):
+            pass
+        time.sleep(0.3)
     return False
 
 
@@ -70,7 +82,10 @@ def server():
     if not _wait_for_server(BASE_URL):
         proc.kill()
         out, err = proc.communicate(timeout=5)
-        raise RuntimeError(f"Server failed:\n{err.decode(errors='replace')[-500:]}")
+        raise RuntimeError(
+            f"BookHaven did not answer on {BASE_URL} (port {TEST_PORT} may be "
+            f"in use by another service — set BOOKHAVEN_TEST_PORT to a free "
+            f"port).\n{err.decode(errors='replace')[-500:]}")
     yield BASE_URL
     proc.kill()
     proc.wait(timeout=5)
