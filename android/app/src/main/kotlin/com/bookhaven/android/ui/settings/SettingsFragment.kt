@@ -36,7 +36,7 @@ class SettingsFragment : Fragment() {
 
         b.tvVersion.text = "BookHaven v${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
 
-        b.etServerUrl.setText(prefs.getString("server_url", "http://bookhaven-host:8097"))
+        b.etServerUrl.setText(prefs.getString("server_url", "http://192.168.1.10:8097"))
         b.btnSave.setOnClickListener {
             val url = b.etServerUrl.text.toString().trimEnd('/')
             if (url.isEmpty()) { Toast.makeText(requireContext(), "URL required", Toast.LENGTH_SHORT).show(); return@setOnClickListener }

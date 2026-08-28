@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  BookHaven is a self-hosted server the user points the app at by entering its
+  address (typically a private LAN or VPN IP such as http://192.168.x.x:8097,
+  or 10.0.2.2 from the Android emulator). Those servers are reached over plain
+  HTTP, so cleartext must stay permitted for the app to work at all.
+
+  Android's network-security-config cannot express "private ranges only"
+  (it matches exact domains/IPs, not CIDR blocks), and the server IP is chosen
+  by the user at runtime — so cleartext is permitted at the base level, but
+  scoped here in a dedicated, documented config instead of the blanket
+  android:usesCleartextTraffic="true" manifest flag. If you expose BookHaven
+  over HTTPS, point the app at the https:// URL and it is used automatically.
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

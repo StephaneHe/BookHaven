@@ -102,7 +102,7 @@ class LoginFragment : Fragment() {
     private fun showServerConfigDialog() {
         val et = EditText(requireContext()).apply {
             hint = "http://192.168.x.x:8097"
-            setText(prefs.getString("server_url", "http://bookhaven-host:8097"))
+            setText(prefs.getString("server_url", "http://192.168.1.10:8097"))
             setPadding(48, 32, 48, 32)
             inputType = android.text.InputType.TYPE_CLASS_TEXT or android.text.InputType.TYPE_TEXT_VARIATION_URI
         }

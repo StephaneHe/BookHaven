@@ -1,4 +1,4 @@
-"""BookHaven - Book reader web server for Jellyfin integration."""
+"""BookHaven — self-hosted ebook library server (EPUB/PDF/CBZ/CBR/MOBI)."""
 import os
 import re
 import sys
@@ -38,7 +38,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.3.2"
+__version__ = "2.4.0"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -152,7 +152,12 @@ def is_alive():
 
 @app.route("/api/test-login", methods=["POST"])
 def test_login():
-    """Test-only endpoint to establish a session without Jellyfin."""
+    """Test-only endpoint to establish a session for automated tests.
+
+    Gated by TEST_MODE, which _resolve_test_mode() only enables when
+    BOOKHAVEN_ENV is a dev/test environment (see config at the top of this
+    file); it can never be turned on by accident in production.
+    """
     if not TEST_MODE:
         return jsonify({"error": "Not in test mode"}), 403
     session["user_id"] = "test-user"

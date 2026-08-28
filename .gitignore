@@ -41,6 +41,19 @@ server.key
 # Claude Code
 .claude/
 
+# Internal agent/working instructions — not for the public repo.
+/CLAUDE.md
+# Internal audit/cleanup plan (references machine paths & security internals).
+/docs/CLEANUP_PLAN.md
+
+# SQLite WAL sidecar files at the repo root
+/bookhaven.db-wal
+/bookhaven.db-shm
+*.db.bak*
+
+# Public-domain demo instance (see docs/CLEANUP_PLAN.md §6)
+/demo/
+
 # OS
 Thumbs.db
 Desktop.ini

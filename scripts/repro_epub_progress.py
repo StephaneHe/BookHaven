@@ -10,14 +10,15 @@ Two scenarios on the same book, progress reset before each:
   B) read forward AFTER a font-size change
 For each we report whether the saved current_location advances as we read.
 """
+import os
 import sys
 import time
 from playwright.sync_api import sync_playwright
 
-BASE = "http://127.0.0.1:8097"
-BOOK = int(sys.argv[1]) if len(sys.argv) > 1 else 29841
-USER = sys.argv[2] if len(sys.argv) > 2 else "steph"
-PIN = "1111"
+BASE = os.environ.get("BOOKHAVEN_BASE_URL", "http://127.0.0.1:8097")
+BOOK = int(sys.argv[1]) if len(sys.argv) > 1 else 1
+USER = sys.argv[2] if len(sys.argv) > 2 else "Demo"
+PIN = os.environ.get("BOOKHAVEN_PIN", "")
 
 
 def api_login(page):

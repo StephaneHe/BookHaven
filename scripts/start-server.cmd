@@ -12,8 +12,11 @@
 :: ============================================================================
 setlocal
 
-set "ROOT=C:\Dev\BookHaven"
-set "PYTHON=C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe"
+:: ROOT = parent of this script's folder (scripts\..), resolved to a full path.
+for %%I in ("%~dp0..") do set "ROOT=%%~fI"
+:: Python interpreter: set BOOKHAVEN_PYTHON to override, else use "python" from PATH.
+if not defined BOOKHAVEN_PYTHON set "BOOKHAVEN_PYTHON=python"
+set "PYTHON=%BOOKHAVEN_PYTHON%"
 set "PORT=8097"
 set "LOG=%ROOT%\server.log"
 set "LOG_ERR=%ROOT%\server_err.log"

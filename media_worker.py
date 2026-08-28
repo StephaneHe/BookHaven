@@ -11,9 +11,11 @@ import os
 import re
 import sys
 import time
+import socket
 import hashlib
 import sqlite3
 import zipfile
+import ipaddress
 import threading
 import logging
 import urllib.request
@@ -397,8 +399,54 @@ def _clean_title_for_search(title):
     return t
 
 
+# Anti-SSRF allowlist. Cover/metadata URLs come from the JSON returned by
+# Open Library / Google Books, i.e. from a remote source we do not control.
+# urllib.request.urlopen also speaks file:// and ftp://, so an altered or
+# malicious API response could otherwise make the server read a local file or
+# reach an internal host. We accept only http(s), and only when the host does
+# not resolve to a private, loopback, link-local or otherwise non-global IP.
+_ALLOWED_URL_SCHEMES = ("http", "https")
+
+
+def _is_safe_url(url):
+    """True only for an http(s) URL whose host resolves to public IP(s).
+
+    Blocks file://, ftp://, and hosts pointing at private/loopback/link-local/
+    reserved ranges (SSRF against the LAN or cloud metadata endpoints). If any
+    resolved address is non-global, the whole URL is rejected — a hostname that
+    returns both a public and a private A record cannot be used to sneak in.
+    """
+    try:
+        parsed = urllib.parse.urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in _ALLOWED_URL_SCHEMES:
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    try:
+        infos = socket.getaddrinfo(host, parsed.port or 0, proto=socket.IPPROTO_TCP)
+    except socket.gaierror:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        addr = info[4][0]
+        try:
+            ip = ipaddress.ip_address(addr)
+        except ValueError:
+            return False
+        if not ip.is_global or ip.is_multicast:
+            return False
+    return True
+
+
 def _fetch_json(url, timeout=8):
     """Fetch JSON from URL with timeout."""
+    if not _is_safe_url(url):
+        logger.debug(f"Refusing to fetch non-public URL: {url!r}")
+        return None
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "BookHaven/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -409,6 +457,9 @@ def _fetch_json(url, timeout=8):
 
 def _fetch_image(url, timeout=8):
     """Fetch image bytes from URL."""
+    if not _is_safe_url(url):
+        logger.debug(f"Refusing to fetch non-public URL: {url!r}")
+        return None
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "BookHaven/1.0"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:

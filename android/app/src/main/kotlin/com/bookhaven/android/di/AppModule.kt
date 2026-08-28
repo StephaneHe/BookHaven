@@ -15,7 +15,7 @@ import okhttp3.OkHttpClient
 import javax.inject.Singleton
 
 /** Single source of truth for the fallback server URL when none is saved in prefs. */
-const val DEFAULT_SERVER_URL = "http://bookhaven-host:8097"
+const val DEFAULT_SERVER_URL = "http://192.168.1.10:8097"
 
 @Module
 @InstallIn(SingletonComponent::class)

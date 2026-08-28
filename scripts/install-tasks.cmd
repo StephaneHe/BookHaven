@@ -1,59 +1,59 @@
 @echo off
 :: ============================================================================
-:: install-tasks.cmd — installe les tâches Windows Task Scheduler pour
-:: BookHaven. DOIT ÊTRE LANCÉ EN ADMINISTRATEUR.
+:: install-tasks.cmd ï¿½ installe les tï¿½ches Windows Task Scheduler pour
+:: BookHaven. DOIT ï¿½TRE LANCï¿½ EN ADMINISTRATEUR.
 ::
-:: Crée deux tâches "À l'ouverture de session" (onlogon) :
-::   BookHaven-server   — lance start-server.cmd au logon (/rl HIGHEST /it)
-::   BookHaven-watchdog — lance le watchdog Node.js au logon avec un délai
+:: Crï¿½e deux tï¿½ches "ï¿½ l'ouverture de session" (onlogon) :
+::   BookHaven-server   ï¿½ lance start-server.cmd au logon (/rl HIGHEST /it)
+::   BookHaven-watchdog ï¿½ lance le watchdog Node.js au logon avec un dï¿½lai
 ::                        de 90s (/delay 0001:30) pour laisser le serveur
-::                        démarrer avant le premier probe.
+::                        dï¿½marrer avant le premier probe.
 ::
-:: IMPORTANT : ce script N'exécute PAS les tâches immédiatement.
+:: IMPORTANT : ce script N'exï¿½cute PAS les tï¿½ches immï¿½diatement.
 ::   Lancez-les manuellement si besoin :
 ::     schtasks /run /tn "BookHaven-server"
 ::     schtasks /run /tn "BookHaven-watchdog"
-::   Ou redémarrez / fermez/rouvrez votre session.
+::   Ou redï¿½marrez / fermez/rouvrez votre session.
 ::
 :: ----------------------------------------------------------------------------
 :: TEST MANUEL DU WATCHDOG
 :: ----------------------------------------------------------------------------
-:: 1. Vérifiez que les deux tâches tournent :
+:: 1. Vï¿½rifiez que les deux tï¿½ches tournent :
 ::      schtasks /query /tn "BookHaven-server"   /v /fo LIST
 ::      schtasks /query /tn "BookHaven-watchdog" /v /fo LIST
 ::
 :: 2. Tuez le process Python sur le port 8097 pour simuler un crash :
 ::      for /f "tokens=5" %p in ('netstat -ano ^| findstr ":8097 " ^| findstr "LISTENING"') do taskkill /PID %p /F /T
 ::
-:: 3. Dans les ~20s (2 échecs × 10s) le watchdog doit déclencher un restart.
-::    Vérifiez les logs :
-::      type C:\Dev\BookHaven\logs\watchdog.log
+:: 3. Dans les ~20s (2 ï¿½checs ï¿½ 10s) le watchdog doit dï¿½clencher un restart.
+::    Vï¿½rifiez les logs :
+::      type "%ROOT%\logs\watchdog.log"
 ::
-:: 4. Sous ~60s supplémentaires, le serveur doit être de nouveau disponible :
+:: 4. Sous ~60s supplï¿½mentaires, le serveur doit ï¿½tre de nouveau disponible :
 ::      curl -s -o nul -w "%{http_code}" http://127.0.0.1:8097/
 ::
-:: STOP PROPRE DU WATCHDOG (sans tuer la tâche) :
-::   echo.> C:\Dev\BookHaven\logs\watchdog.stop
+:: STOP PROPRE DU WATCHDOG (sans tuer la tï¿½che) :
+::   echo.> "%ROOT%\logs\watchdog.stop"
 :: ============================================================================
 setlocal
 
-set "ROOT=C:\Dev\BookHaven"
+for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 set "NODE=C:\Program Files\nodejs\node.exe"
 set "SCRIPTS=%ROOT%\scripts"
 
 echo ============================================================
-echo  BookHaven — installation des tâches Task Scheduler
-echo  Répertoire : %ROOT%
+echo  BookHaven ï¿½ installation des tï¿½ches Task Scheduler
+echo  Rï¿½pertoire : %ROOT%
 echo ============================================================
 echo.
 
-:: --- Supprimer les anciennes tâches si elles existent ------------------
-echo Suppression des tâches existantes (si présentes)...
+:: --- Supprimer les anciennes tï¿½ches si elles existent ------------------
+echo Suppression des tï¿½ches existantes (si prï¿½sentes)...
 schtasks /delete /tn "BookHaven-server"   /f >nul 2>&1
 schtasks /delete /tn "BookHaven-watchdog" /f >nul 2>&1
 
 echo.
-echo === Tâche 1 : BookHaven-server (logon, sans délai) ===
+echo === Tï¿½che 1 : BookHaven-server (logon, sans dï¿½lai) ===
 schtasks /create /tn "BookHaven-server" ^
   /tr "\"%SCRIPTS%\start-server.cmd\"" ^
   /sc onlogon ^
@@ -66,7 +66,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo === Tâche 2 : BookHaven-watchdog (logon, délai 90s) ===
+echo === Tï¿½che 2 : BookHaven-watchdog (logon, dï¿½lai 90s) ===
 schtasks /create /tn "BookHaven-watchdog" ^
   /tr "\"%NODE%\" \"%SCRIPTS%\bookhaven-watchdog.mjs\"" ^
   /sc onlogon ^
@@ -80,24 +80,24 @@ if errorlevel 1 (
 )
 
 echo.
-echo === Vérification des tâches créées ===
+echo === Vï¿½rification des tï¿½ches crï¿½ï¿½es ===
 schtasks /query /tn "BookHaven-server"   /v /fo LIST | findstr /i "TaskName Status"
 echo.
 schtasks /query /tn "BookHaven-watchdog" /v /fo LIST | findstr /i "TaskName Status"
 
 echo.
 echo ============================================================
-echo  Tâches créées avec succès.
+echo  Tï¿½ches crï¿½ï¿½es avec succï¿½s.
 echo.
-echo  Les tâches démarreront automatiquement à la PROCHAINE
+echo  Les tï¿½ches dï¿½marreront automatiquement ï¿½ la PROCHAINE
 echo  ouverture de session. Pour les lancer MAINTENANT :
 echo.
 echo    schtasks /run /tn "BookHaven-server"
 echo    (attendre ~5s)
 echo    schtasks /run /tn "BookHaven-watchdog"
 echo.
-echo  Gérer via : taskschd.msc (Bibliothèque du Planificateur)
-echo  Arrêter   : schtasks /end /tn "BookHaven-watchdog"
+echo  Gï¿½rer via : taskschd.msc (Bibliothï¿½que du Planificateur)
+echo  Arrï¿½ter   : schtasks /end /tn "BookHaven-watchdog"
 echo              schtasks /end /tn "BookHaven-server"
 echo  Supprimer : schtasks /delete /tn "BookHaven-server" /f
 echo              schtasks /delete /tn "BookHaven-watchdog" /f

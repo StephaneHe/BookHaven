@@ -14,7 +14,7 @@
 // Stop propre : créer le fichier logs/watchdog.stop → le watchdog sort au
 // prochain tick (supprime le fichier).
 //
-// Logs : C:\Dev\BookHaven\logs\watchdog.log
+// Logs : <repo>\logs\watchdog.log (ROOT is derived from this file's location)
 // ============================================================================
 
 import { spawnSync } from 'node:child_process';

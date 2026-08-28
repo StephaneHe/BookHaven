@@ -5,7 +5,36 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.3.2] - 2026-08-21
+## [2.4.0] - 2026-08-28
+
+Préparation à la publication (dépôt portfolio). Aucune donnée de la collection
+n'est touchée ; le modèle d'exécution (processus Python standalone) est inchangé.
+
+### Security
+- **SSRF sur l'enrichissement de métadonnées.** `media_worker._fetch_json` et
+  `_fetch_image` recevaient une URL issue des réponses d'Open Library / Google
+  Books et la passaient telle quelle à `urllib.request.urlopen`, qui accepte
+  aussi `file://`/`ftp://` et les hôtes privés. Ajout de `_is_safe_url()` :
+  schéma `http(s)` uniquement, et rejet des hôtes résolvant vers une IP
+  loopback / privée / lien-local / réservée (endpoints de métadonnées cloud
+  inclus). Couvert par `tests/test_media_worker_ssrf.py`.
+- **Android : suppression du `usesCleartextTraffic="true"` global** au profit
+  d'un `network_security_config.xml` dédié et documenté (le cleartext reste
+  permis pour le serveur auto-hébergé privé/VPN, cas d'usage nominal).
+  `android:allowBackup` passe à `false`.
+
+### Changed
+- **Portabilité de l'exploitation** : `scripts/*.cmd` et `tests/conftest.py`
+  dérivent la racine du dépôt de leur propre emplacement et l'interpréteur
+  Python de `BOOKHAVEN_PYTHON` (repli sur `python` / `sys.executable`), au lieu
+  de chemins machine en dur.
+- `.env.example` : `BOOKHAVEN_COOKIE_SECURE` documenté ; variables `JELLYFIN_*`
+  vestigiales retirées (l'auth est locale, plus aucune référence en code).
+
+### Removed
+- Six lanceurs `.bat`/`.ps1` et `start-wsl.sh` obsolètes à la racine (pointaient
+  vers un répertoire qui n'existe plus ; les lanceurs actifs sont dans `scripts/`).
+- `CLAUDE.md` retiré du suivi git (instructions de travail internes).
 
 ### Fixed
 - **Lecteur EPUB web : la progression ne pouvait plus être écrasée par une

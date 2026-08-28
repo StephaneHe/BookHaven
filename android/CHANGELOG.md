@@ -39,7 +39,7 @@
 
 ### Added
 - Initial release of the native Android client for BookHaven
-- Server configuration screen (VPN URL stored in SharedPreferences)
+- Server configuration screen (server URL stored in SharedPreferences)
 - User login via POST /api/auth/login with persistent session cookie (MemoryCookieJar)
 - Library grid view with cover images (Coil), title, author, search, category chip filters
 - Download badge on downloaded books; spinner badge while downloading

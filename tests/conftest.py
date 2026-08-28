@@ -7,8 +7,12 @@ import pytest
 from urllib.request import urlopen
 from urllib.error import URLError
 
-PYTHON = r"C:\Users\user\AppData\Local\Programs\Python\Python312\python.exe"
-SERVER_SCRIPT = r"H:\BookHaven\bookhaven.py"
+# Repo root = parent of this tests/ directory. Keeps the harness portable
+# instead of hard-coding a machine-specific checkout path.
+_REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Interpreter: BOOKHAVEN_PYTHON overrides, else reuse the one running pytest.
+PYTHON = os.environ.get("BOOKHAVEN_PYTHON", sys.executable)
+SERVER_SCRIPT = os.path.join(_REPO_ROOT, "bookhaven.py")
 TEST_PORT = 8098
 BASE_URL = f"http://localhost:{TEST_PORT}"
 
@@ -58,7 +62,7 @@ def server():
     env["BOOKHAVEN_PORT"] = str(TEST_PORT)
     proc = subprocess.Popen(
         [PYTHON, SERVER_SCRIPT],
-        cwd=r"H:\BookHaven",
+        cwd=_REPO_ROOT,
         env=env,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
