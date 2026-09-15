@@ -1,5 +1,6 @@
 package com.bookhaven.android.data.api
 
+import android.content.SharedPreferences
 import android.webkit.CookieManager
 import com.google.gson.GsonBuilder
 import com.google.gson.TypeAdapter
@@ -15,8 +16,20 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.util.concurrent.TimeUnit
 
-class MemoryCookieJar : CookieJar {
+/**
+ * Cookie jar that survives process death by persisting the session cookie to
+ * SharedPreferences.
+ *
+ * It used to be memory-only: when Android reclaimed the backgrounded process,
+ * the session cookie was lost. On the next cold start every request — including
+ * the book-cover requests issued by the shared OkHttp client — went out
+ * unauthenticated (HTTP 401) until a silent re-login landed, so covers vanished
+ * and reappeared. Persisting the cookie keeps the session valid across restores.
+ */
+class PersistentCookieJar(private val prefs: SharedPreferences) : CookieJar {
     private val store = mutableMapOf<String, MutableList<Cookie>>()
+
+    init { loadFromPrefs() }
 
     override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
         store.getOrPut(url.host) { mutableListOf() }.apply {
@@ -28,12 +41,40 @@ class MemoryCookieJar : CookieJar {
         val cm = CookieManager.getInstance()
         cookies.forEach { cm.setCookie(url.toString(), it.toString()) }
         cm.flush()
+        persistToPrefs()
     }
 
     override fun loadForRequest(url: HttpUrl): List<Cookie> =
         store[url.host] ?: emptyList()
 
-    fun clear() = store.clear()
+    fun clear() {
+        store.clear()
+        prefs.edit().remove(PREF_KEY).apply()
+    }
+
+    // Persisted as "<host>\n<Set-Cookie string>" entries; Cookie.parse round-trips
+    // OkHttp's own Cookie.toString(), so no custom (de)serialization is needed.
+    private fun persistToPrefs() {
+        val entries = store.entries.flatMap { (host, cookies) ->
+            cookies.map { "$host\n$it" }
+        }.toSet()
+        prefs.edit().putStringSet(PREF_KEY, entries).apply()
+    }
+
+    private fun loadFromPrefs() {
+        val saved = prefs.getStringSet(PREF_KEY, emptySet()) ?: emptySet()
+        for (entry in saved) {
+            val sep = entry.indexOf('\n')
+            if (sep <= 0) continue
+            val host = entry.substring(0, sep)
+            val setCookie = entry.substring(sep + 1)
+            val url = HttpUrl.Builder().scheme("http").host(host).build()
+            val cookie = Cookie.parse(url, setCookie) ?: continue
+            store.getOrPut(host) { mutableListOf() }.add(cookie)
+        }
+    }
+
+    companion object { private const val PREF_KEY = "session_cookies" }
 }
 
 fun buildOkHttpClient(cookieJar: CookieJar): OkHttpClient =

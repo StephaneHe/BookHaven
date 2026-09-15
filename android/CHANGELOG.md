@@ -1,5 +1,23 @@
 # Changelog — BookHaven Android
 
+## [1.5.1] - 2026-09-15
+
+### Fixed
+- **Les couvertures de livres disparaissaient au bout d'un moment** (placeholder
+  gris à la place de la vignette). Deux causes cumulées :
+  - Coil (chargement des images) utilisait son client HTTP par défaut, **sans le
+    cookie de session**. Or `/api/books/<id>/cover` exige l'authentification
+    (`@login_required`) → **401 → placeholder**. `BookHavenApp` fournit désormais
+    un `ImageLoader` Coil basé sur le **client OkHttp authentifié** (partage du
+    `cookieJar`) + un **cache disque persistant** (`cover_cache`, 64 Mo) : les
+    couvertures se chargent et **restent visibles** entre les redémarrages, avec
+    rechargement propre en cas d'éviction.
+  - Le cookie de session n'existait qu'en mémoire (`MemoryCookieJar`) → **perdu à
+    la mort du processus**, forçant chaque démarrage à froid à refaire des
+    requêtes non authentifiées jusqu'au ré-login silencieux. Remplacé par
+    `PersistentCookieJar` (persistance dans les `SharedPreferences`), donc la
+    session survit au restore du processus.
+
 ## [1.5.0] - 2026-08-28
 
 ### Security

@@ -3,7 +3,7 @@ package com.bookhaven.android.di
 import android.content.Context
 import android.content.SharedPreferences
 import com.bookhaven.android.data.api.ApiService
-import com.bookhaven.android.data.api.MemoryCookieJar
+import com.bookhaven.android.data.api.PersistentCookieJar
 import com.bookhaven.android.data.api.buildOkHttpClient
 import com.bookhaven.android.data.api.buildRetrofit
 import dagger.Module
@@ -28,11 +28,12 @@ object AppModule {
 
     @Provides
     @Singleton
-    fun provideCookieJar(): MemoryCookieJar = MemoryCookieJar()
+    fun provideCookieJar(prefs: SharedPreferences): PersistentCookieJar =
+        PersistentCookieJar(prefs)
 
     @Provides
     @Singleton
-    fun provideOkHttpClient(cookieJar: MemoryCookieJar): OkHttpClient =
+    fun provideOkHttpClient(cookieJar: PersistentCookieJar): OkHttpClient =
         buildOkHttpClient(cookieJar)
 
     @Provides
