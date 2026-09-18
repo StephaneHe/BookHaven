@@ -12,7 +12,12 @@
       `/api/books` tris `added_desc`/`last_read_desc` ; Android pagination infinie
       + facettes `/api/filters` + sélecteur de tri + recherche debounce 300 ms +
       snapshot hors-ligne cumulatif. compileDebugKotlin OK. **Redémarrage Flask requis.**
-- [ ] P0-D Refonte visible (Android) — Accueil/Bibliothèque/Téléchargements.
+- [x] **P0-D Refonte visible** (Android 1.7.0/59) : nav basse Accueil/Bibliothèque/
+      Téléchargements (Réglages en toolbar) ; écran Accueil (Reprendre + rails En cours /
+      Récemment ajoutés + raccourcis Catégories, endpoints existants) ; rail Continue Reading
+      retiré de la Bibliothèque. Build APK OK. À valider sur émulateur/device. Pas de changement Flask.
+
+**P0 terminé (A/B/C/D).** P1 et lots écartés = hors périmètre, non réalisés.
 
 ## 2026-09-18 — Manhua en défilement vertical continu (webtoon)
 

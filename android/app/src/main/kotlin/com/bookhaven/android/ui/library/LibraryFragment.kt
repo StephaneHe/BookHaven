@@ -50,7 +50,6 @@ class LibraryFragment : Fragment() {
     @Inject lateinit var prefs: SharedPreferences
 
     private lateinit var bookAdapter: BookAdapter
-    private lateinit var continueAdapter: ContinueReadingAdapter
     private var downloadedIds = emptySet<Int>()
     private var downloadingIds = emptySet<Int>()
     private var searchJob: Job? = null
@@ -62,21 +61,6 @@ class LibraryFragment : Fragment() {
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
-
-        // Continue Reading horizontal list
-        continueAdapter = ContinueReadingAdapter(
-            serverUrl = { prefs.getString("server_url", DEFAULT_SERVER_URL) ?: DEFAULT_SERVER_URL },
-            onClick = ::openBook,
-            onRemove = { book ->
-                // Remove from in-progress list locally (server call happens in DownloadRepository)
-                vm.continueReading.value.toMutableList().let { list ->
-                    list.removeAll { it.id == book.id }
-                    continueAdapter.submitList(list)
-                }
-            },
-            onLongClick = ::showBookMenu
-        )
-        binding.rvContinue.adapter = continueAdapter
 
         // Books grid
         bookAdapter = BookAdapter(
@@ -130,14 +114,6 @@ class LibraryFragment : Fragment() {
             vm.downloading.collect { ids ->
                 downloadingIds = ids
                 bookAdapter.notifyDataSetChanged()
-            }
-        }
-        viewLifecycleOwner.lifecycleScope.launch {
-            vm.continueReading.collect { books ->
-                val visible = books.isNotEmpty()
-                binding.tvContinueLabel.visibility = if (visible) View.VISIBLE else View.GONE
-                binding.rvContinue.visibility = if (visible) View.VISIBLE else View.GONE
-                continueAdapter.submitList(books)
             }
         }
         viewLifecycleOwner.lifecycleScope.launch {

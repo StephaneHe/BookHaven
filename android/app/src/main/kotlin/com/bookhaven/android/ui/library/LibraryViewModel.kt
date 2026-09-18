@@ -49,9 +49,6 @@ class LibraryViewModel @Inject constructor(
     private val _state = MutableStateFlow<LibraryState>(LibraryState.Loading)
     val state: StateFlow<LibraryState> = _state.asStateFlow()
 
-    private val _continueReading = MutableStateFlow<List<Book>>(emptyList())
-    val continueReading: StateFlow<List<Book>> = _continueReading.asStateFlow()
-
     val downloads: StateFlow<List<DownloadedBook>> = downloadRepo.downloads
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -85,7 +82,6 @@ class LibraryViewModel @Inject constructor(
 
     fun loadAll() {
         loadBooks()
-        loadContinueReading()
     }
 
     private fun isUnfiltered() =
@@ -162,12 +158,6 @@ class LibraryViewModel @Inject constructor(
             }
         }
         loading = false
-    }
-
-    fun loadContinueReading() {
-        viewModelScope.launch {
-            _continueReading.value = bookRepo.getContinueReading()
-        }
     }
 
     fun downloadBook(book: Book) {

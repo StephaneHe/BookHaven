@@ -1,5 +1,19 @@
 # Changelog — BookHaven Android
 
+## [1.7.0] - 2026-09-18
+
+### Changed
+- **Refonte de la navigation visible (refonte P0-D).** Nouvelle **nav basse** à
+  trois onglets : **Accueil**, **Bibliothèque**, **Téléchargements** ; les
+  **Réglages** passent dans la barre du haut (menu toolbar). Nouvel écran
+  **Accueil** qui agrège les endpoints existants (aucun nouvel endpoint serveur) :
+  grande carte **« Reprendre »** (dernière lecture via `/api/continue-reading`),
+  rail **« En cours »**, rail **« Récemment ajoutés »** (`/api/books?sort=added_desc`)
+  et **raccourcis Catégories** (`/api/filters`) qui ouvrent la Bibliothèque
+  pré-filtrée. Le rail « Continue Reading » est retiré de la Bibliothèque
+  (déplacé vers l'Accueil), qui se concentre désormais sur la grille paginée,
+  les filtres catégorie/genre et le tri.
+
 ## [1.6.1] - 2026-09-18
 
 ### Changed
