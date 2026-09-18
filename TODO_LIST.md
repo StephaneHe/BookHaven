@@ -1,5 +1,20 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Zoom lecteur web + mémorisation par livre
+
+- [x] Contrôles **+ / − / reset** dans la barre du lecteur comic + raccourcis
+      `+`/`-`/`0` et **Ctrl+molette**. Agit sur la largeur des planches
+      (`--comic-zoom`). Défaut 100% = largeur d'ajustement entre les boutons.
+- [x] Zoom in → défilement **horizontal** ; boutons gauche/droite **visibles +
+      cliquables** même zoomé (vérifié : nav topmost, clic 1/969→2/969) ;
+      défilement vertical conservé.
+- [x] **Mémorisé par livre** : localStorage `bookhaven.zoom.comic.<id>` (préférence
+      d'affichage par appareil, pas de changement de schéma DB, fallback try/catch).
+      Vérifié headless : livre A restauré à 130% à la réouverture, livre B
+      indépendant à 100%, retour A toujours 130%.
+- [x] Web v2.6.0. Template auto-reload → **pas de redémarrage Flask** requis.
+
+
 ## 2026-09-18 — Lecteur web : image entre les boutons (correctif fit-width)
 
 - [x] Le fit-width plein écran recouvrait les boutons prev/next → l'image remplit

@@ -499,6 +499,14 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   cursor: pointer; line-height: 1.6;
 }
 .font-controls button:hover { background: #333; color: #fff; }
+.zoom-controls { display: none; align-items: center; gap: 4px; }
+.zoom-controls button {
+  background: #222; color: #bbb; border: 1px solid #333;
+  border-radius: 5px; padding: 2px 9px; font-size: 12px;
+  cursor: pointer; line-height: 1.6; min-width: 28px;
+}
+.zoom-controls button:hover { background: #333; color: #fff; }
+#comic-zoom-label { font-variant-numeric: tabular-nums; }
 .theme-controls { display: none; align-items: center; gap: 5px; }
 .theme-dot {
   width: 15px; height: 15px; border-radius: 50%;
@@ -592,18 +600,22 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 
 /* Comic Reader */
 /* Width reserved on each side for the prev/next nav bars. The page fills the
-   space BETWEEN them (as wide as possible) without covering the controls. */
-#comic-container { --comic-nav-w: 64px; }
+   space BETWEEN them (as wide as possible) without covering the controls.
+   --comic-zoom scales the plate width: 100% = fit the central area (default),
+   >100% overflows and scrolls horizontally, <100% shrinks and centres. */
+#comic-container { --comic-nav-w: 64px; --comic-zoom: 100%; }
 #comic-container {
-  flex: 1; display: flex; align-items: flex-start;
-  justify-content: center; overflow: auto;
+  flex: 1; overflow: auto;
   position: relative; background: #000;
   padding: 0 var(--comic-nav-w); box-sizing: border-box;
 }
-/* Manhua/webtoon default: fill the width of the central area (between the nav
-   bars) and scroll vertically, rather than fit-height (narrow centred column). */
+/* Manhua/webtoon: fill the width of the central area (between the nav bars) at
+   the current zoom and scroll vertically. Block + auto margins centre the page
+   when it is narrower than the area and left-align it (no clipping) when wider,
+   so zoomed-in pages scroll horizontally instead of hiding the controls. */
 #comic-container img {
-  width: 100%; height: auto; object-fit: contain;
+  display: block; margin: 0 auto;
+  width: var(--comic-zoom); height: auto;
 }
 .comic-nav {
   position: fixed; top: 0; bottom: 0; width: var(--comic-nav-w);
@@ -897,7 +909,7 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 
   #comic-container { --comic-nav-w: 44px; }
   #comic-container img, #comic-img {
-    width: 100%; height: auto; object-fit: contain;
+    width: var(--comic-zoom); height: auto;
   }
   .comic-nav { font-size: 26px; }
   .page-indicator { font-size: 14px; padding: 6px 16px; }
@@ -1121,6 +1133,11 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     <div class="font-controls" id="font-controls">
       <button onclick="epubFontDec()" title="Diminuer la police">A−</button>
       <button onclick="epubFontInc()" title="Augmenter la police">A+</button>
+    </div>
+    <div class="zoom-controls" id="comic-zoom-controls">
+      <button onclick="comicZoom(-1)" title="Zoom arrière (−)">−</button>
+      <button id="comic-zoom-label" onclick="comicZoomReset()" title="Ajuster à la largeur (0)">100%</button>
+      <button onclick="comicZoom(1)" title="Zoom avant (+)">+</button>
     </div>
     <div class="theme-controls" id="theme-controls">
       <div class="theme-dot" data-theme="light" onclick="epubSetTheme('light')" title="Clair" style="background:#fff;"></div>
@@ -2193,6 +2210,7 @@ async function closeReader() {
   document.getElementById('comic-img').src = '';
   document.getElementById('font-controls').style.display = 'none';
   document.getElementById('theme-controls').style.display = 'none';
+  document.getElementById('comic-zoom-controls').style.display = 'none';
   document.getElementById('epub-container').style.background = '#fff';
   document.getElementById('epub-nav-bar').classList.remove('visible');
   document.getElementById('epub-jump-overlay').classList.remove('active');
@@ -2618,7 +2636,9 @@ async function openPdf(bookId) {
 // ── Comic Reader ────────────────────────────────────────────
 async function openComic(bookId) {
   const container = document.getElementById('comic-container');
-  container.style.display = 'flex';
+  container.style.display = 'block';
+  document.getElementById('comic-zoom-controls').style.display = 'flex';
+  comicZoomLoad(bookId);   // restore this book's saved zoom (or default)
 
   try {
     const r = await fetch(`/api/books/${bookId}/comic-pages`);
@@ -2639,6 +2659,46 @@ async function openComic(bookId) {
     container.innerHTML = `<div style="color:red;padding:20px">Error: ${esc(e.message)}</div>`;
   }
 }
+
+// ── Comic zoom (per-book, remembered in localStorage) ─────────
+// Zoom is a per-DEVICE display preference (a level that suits a 4K screen is
+// wrong on a phone), so it lives in localStorage keyed by book id rather than
+// in bookhaven.db. Reading progress stays server-side; this is pure UI.
+const COMIC_ZOOM_MIN = 40, COMIC_ZOOM_MAX = 400, COMIC_ZOOM_STEP = 15;
+let comicZoomPct = 100;
+
+function comicZoomKey(id) { return 'bookhaven.zoom.comic.' + id; }
+
+function comicZoomApply(z, persist) {
+  comicZoomPct = Math.max(COMIC_ZOOM_MIN, Math.min(COMIC_ZOOM_MAX, Math.round(z)));
+  const c = document.getElementById('comic-container');
+  if (c) c.style.setProperty('--comic-zoom', comicZoomPct + '%');
+  const lbl = document.getElementById('comic-zoom-label');
+  if (lbl) lbl.textContent = comicZoomPct + '%';
+  if (persist && state.currentBook) {
+    try { localStorage.setItem(comicZoomKey(state.currentBook.id), String(comicZoomPct)); } catch(e) {}
+  }
+}
+
+function comicZoomLoad(id) {
+  let z = 100;
+  try {
+    const v = parseInt(localStorage.getItem(comicZoomKey(id)), 10);
+    if (v >= COMIC_ZOOM_MIN && v <= COMIC_ZOOM_MAX) z = v;
+  } catch(e) {}
+  comicZoomApply(z, false);
+}
+
+function comicZoom(dir) { comicZoomApply(comicZoomPct + dir * COMIC_ZOOM_STEP, true); }
+function comicZoomReset() { comicZoomApply(100, true); }
+
+// Ctrl + mouse wheel zooms the plate, like an image viewer.
+(function () {
+  const c = document.getElementById('comic-container');
+  if (c) c.addEventListener('wheel', function (e) {
+    if (e.ctrlKey) { e.preventDefault(); comicZoom(e.deltaY < 0 ? 1 : -1); }
+  }, { passive: false });
+})();
 
 function showComicPage() {
   const bookId = state.currentBook.id;
@@ -2715,6 +2775,10 @@ function handleReaderKeys(e) {
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     if (fmt === 'epub') epubNext();
     else if (fmt === 'cbr' || fmt === 'cbz') comicNext();
+  } else if (fmt === 'cbr' || fmt === 'cbz') {
+    if (e.key === '+' || e.key === '=') { comicZoom(1); e.preventDefault(); }
+    else if (e.key === '-' || e.key === '_') { comicZoom(-1); e.preventDefault(); }
+    else if (e.key === '0') { comicZoomReset(); e.preventDefault(); }
   }
 }
 

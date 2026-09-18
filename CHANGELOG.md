@@ -5,6 +5,24 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.0] - 2026-09-18
+
+### Added
+- **Zoom du lecteur comic (+ / − / réajuster), mémorisé par livre.** Boutons
+  `−  <niveau%>  +` dans la barre du lecteur (le libellé central = reset à la
+  largeur d'ajustement). Raccourcis clavier `+` / `-` / `0` et **Ctrl+molette**.
+  Le zoom agit sur la largeur des planches : 100% = largeur d'ajustement (défaut,
+  entre les boutons), >100% déborde avec **défilement horizontal**, <100% réduit
+  et recentre. Les boutons de navigation gauche/droite restent visibles et
+  cliquables même zoomé ; défilement vertical conservé.
+  Le niveau est **retenu par livre** (localStorage `bookhaven.zoom.comic.<id>`)
+  et **restauré à la réouverture du même livre** ; deux livres = réglages
+  indépendants ; livre jamais ouvert = défaut. Choix localStorage (et non une
+  colonne `bookhaven.db`) car le zoom est une préférence d'affichage **par
+  appareil** (un niveau adapté à un écran 4K ne l'est pas sur mobile) ; fallback
+  silencieux si localStorage indisponible. Changement de template →
+  **rechargement auto**, pas de redémarrage Flask requis.
+
 ## [2.5.3] - 2026-09-18
 
 ### Changed
