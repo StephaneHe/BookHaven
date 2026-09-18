@@ -1,5 +1,18 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Quickfix manhua (pubs + fit-width)
+
+- [x] **Pubs retirées** : détection (`scripts/manhua_adfilter.py`) — pub 728×90
+      récurrente (74×) + bandeaux filigrane larges/courts. CBZ reconstruit
+      **1045 → 969 pages** (76 retirées), backup `Sir, Don't Show Off.cbz.orig`.
+- [x] **Pipeline filtré pour l'avenir** : `combine_` et `pack_manhua_cbz.py`
+      excluent les pubs à la construction.
+- [x] **Lecteur web : défaut fit-width** (100% largeur, scroll vertical) au lieu
+      de fit-height. Template auto-reload.
+- [x] Version web 2.5.2, redémarrage Flask pour la version (les 2 fixes sont
+      actifs sans redémarrage : template + CBZ relus à chaud).
+
+
 ## 2026-09-18 — Import manhua « Sir, Don't Show Off » (offline)
 
 - [x] Site roliascan.com (thème mangapeak). Liste complète des chapitres extraite

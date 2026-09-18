@@ -5,6 +5,25 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.2] - 2026-09-18
+
+### Changed
+- **Lecteur comic : ajustement par défaut en 100% LARGEUR (fit-width)** au lieu
+  de 100% hauteur. Les planches manhua/webtoon remplissent désormais la largeur
+  et défilent verticalement, au lieu d'être réduites en colonne étroite centrée.
+  (`#comic-container img` : `width:100%; height:auto` + conteneur `overflow:auto`.)
+  Changement de template → **rechargement auto** (pas de redémarrage requis).
+
+### Fixed
+- **Bannières de pub aspirées dans les pages du manhua.** Le flux de pages
+  roliascan contenait une pub récurrente **728×90** (« BEST WEBSITE TO WATCH
+  MOVIES », 74 occurrences) et des bandeaux filigrane fins (LIKEMANGA.IO /
+  WEBNOVEL). Ajout de `scripts/manhua_adfilter.py` (tailles IAB connues +
+  heuristique bandeau large & court `ar≥3, h≤120`, jamais une planche) appliqué
+  dans `combine_manhua_cbz.py` et `pack_manhua_cbz.py`. CBZ reconstruit **1045 →
+  969 pages** (76 pubs retirées), sauvegarde `.cbz.orig` conservée. Le pipeline
+  filtre désormais ces pubs pour les prochains imports.
+
 ## [2.5.1] - 2026-09-18
 
 ### Fixed

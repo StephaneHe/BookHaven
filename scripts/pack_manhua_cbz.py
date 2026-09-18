@@ -19,6 +19,9 @@ import sys
 import json
 import zipfile
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from manhua_adfilter import is_ad_image   # noqa: E402
+
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_ROOT = os.path.join(BASE_DIR, "data", "manhua", "sir-dont-show-off")
 SERIES_DIR_NAME = "Sir, Don't Show Off"
@@ -52,7 +55,8 @@ def cbz_name(num):
 
 def page_images(chdir):
     return sorted(f for f in os.listdir(chdir)
-                  if os.path.splitext(f)[1].lower() in IMG_EXTS)
+                  if os.path.splitext(f)[1].lower() in IMG_EXTS
+                  and not is_ad_image(os.path.join(chdir, f)))
 
 
 def needs_rebuild(cbz_path, images):

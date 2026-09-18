@@ -15,7 +15,12 @@ order. Output: <BOOKS_ROOT>\\Comics\\Sir, Don't Show Off.cbz
 """
 import os
 import re
+import sys
+import shutil
 import zipfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from manhua_adfilter import is_ad_image   # noqa: E402
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SRC_ROOT = os.path.join(BASE_DIR, "data", "manhua", "sir-dont-show-off")
@@ -50,7 +55,13 @@ def main():
             dirs.append((cn, d))
     dirs.sort()
 
+    # Keep a one-time backup of the pre-clean archive.
+    if os.path.exists(out_path) and not os.path.exists(out_path + ".orig"):
+        shutil.copy2(out_path, out_path + ".orig")
+        print(f"Backed up existing archive -> {out_path}.orig")
+
     total_pages = 0
+    ads_removed = 0
     tmp = out_path + ".part"
     with zipfile.ZipFile(tmp, "w", zipfile.ZIP_STORED) as zf:  # images already compressed
         for cn, d in dirs:
@@ -58,14 +69,21 @@ def main():
             pages = sorted(f for f in os.listdir(chdir)
                            if os.path.splitext(f)[1].lower() in IMG_EXTS)
             prefix = int(round(cn * 10))
-            for i, img in enumerate(pages, start=1):
+            kept = 0
+            for img in pages:
+                src = os.path.join(chdir, img)
+                if is_ad_image(src):        # drop ad/watermark banners
+                    ads_removed += 1
+                    continue
+                kept += 1
                 ext = os.path.splitext(img)[1].lower()
-                arc = f"{prefix:05d}_{i:03d}{ext}"
-                zf.write(os.path.join(chdir, img), arcname=arc)
+                arc = f"{prefix:05d}_{kept:03d}{ext}"   # contiguous renumbering
+                zf.write(src, arcname=arc)
                 total_pages += 1
     os.replace(tmp, out_path)
     size = os.path.getsize(out_path)
-    print(f"Combined {len(dirs)} chapters, {total_pages} pages -> {out_path}")
+    print(f"Combined {len(dirs)} chapters, {total_pages} pages "
+          f"({ads_removed} ad/banner pages removed) -> {out_path}")
     print(f"Size: {size/1e6:.1f} MB")
 
 
