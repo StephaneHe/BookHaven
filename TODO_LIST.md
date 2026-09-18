@@ -1,5 +1,29 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Import manhua « Sir, Don't Show Off » (offline)
+
+- [x] Site roliascan.com (thème mangapeak). Liste complète des chapitres extraite
+      du sélecteur du reader : **217 chapitres** (1–216 + décimal **172.5**).
+- [x] Images sur CDN déterministe `roliascan.org/storage/chapters/manhwa_319969_<ch>/`.
+      **Deux formats par chapitre** : multi-pages `page_NNN.jpg` OU strip unique
+      `page_001_stitched.webp` → détection auto par chapitre (fallback JSON-LD).
+- [x] Téléchargé **217/217 chapitres, 1045 images, 735 Mo, 0 échec** →
+      `data/manhua/sir-dont-show-off/<NNN>/` (resumable, poli, hors dépôt).
+- [x] Packagé en **217 CBZ** dans `H:\Books\Comics\Sir, Don't Show Off\`.
+- [x] Importé en base (surgical, 217 lignes, `series_index` exact 1..216 + 172.5,
+      couvertures) sans rescan global. Backup DB pré-import créé.
+- [x] Vérifié LISIBLE sur le web live (8097) : série ordonnée (…172, 172.5, 173…),
+      chapitres multi-pages ET strips webp s'affichent dans l'ordre.
+- [x] Fix MIME WebP pour `/comic-page` (bump 2.5.1) — **redémarrer Flask** pour l'appliquer.
+
+### Suivi possible (non bloquant)
+- [ ] Vérifier le rendu d'un strip webp très haut (~14000 px) sur l'app Android
+      (Coil peut sous-échantillonner les très grandes images). Web = OK.
+- [ ] Relance : `python scripts/fetch_manhua.py <chapitres>` puis `pack_` + `import_`
+      si de nouveaux chapitres sortent (les scripts sont idempotents/reprenables).
+
+
+
 ## 2026-09-15 — Icônes/couvertures qui disparaissent (app Android)
 
 - [x] Diagnostiquer l'interface concernée : **app Android** (l'UI web sert les

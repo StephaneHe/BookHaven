@@ -38,7 +38,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -166,6 +166,13 @@ def test_login():
 
 # Image extensions for comic page serving
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"}
+# Explicit MIME map for comic pages: Python's mimetypes has no .webp on some
+# platforms, so webp comic pages (e.g. stitched manhua strips) would otherwise be
+# mislabelled image/jpeg.
+IMAGE_MIME = {
+    ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
+    ".gif": "image/gif", ".bmp": "image/bmp", ".webp": "image/webp",
+}
 
 # Characters that are illegal in a Windows filename, plus control chars.
 _UNSAFE_FILENAME_RE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -1556,7 +1563,7 @@ def api_comic_page(book_id, page_num):
 
     page_name = pages[page_num]
     ext = os.path.splitext(page_name)[1].lower()
-    mime = mimetypes.types_map.get(ext, "image/jpeg")
+    mime = IMAGE_MIME.get(ext) or mimetypes.types_map.get(ext, "image/jpeg")
 
     try:
         archive = _open_comic_archive(resolved_path, book["format"])

@@ -5,6 +5,25 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.1] - 2026-09-18
+
+### Fixed
+- **Pages de comics WebP servies avec le mauvais type MIME.** `mimetypes` ne
+  connaît pas `.webp` sur cette plateforme, donc `/api/books/<id>/comic-page/<n>`
+  renvoyait `image/jpeg` pour une page WebP. Ajout d'une table `IMAGE_MIME`
+  explicite (jpg/jpeg/png/gif/bmp/webp). Les navigateurs devinaient déjà le
+  format, mais le type correct fiabilise les clients stricts (app Android/Coil).
+  ⚠️ **Nécessite un redémarrage du serveur Flask** pour prendre effet.
+
+### Added
+- **Outillage d'import de manhua** (`scripts/fetch_manhua.py`,
+  `pack_manhua_cbz.py`, `import_manhua_to_db.py`) : téléchargement robuste et
+  reprenable d'une série d'images à chapitres depuis un site instable
+  (en-têtes réalistes + Referer, retries/backoff, détection auto du format de
+  page multi-`.jpg` ou strip `_stitched.webp`), packaging en **CBZ par chapitre**
+  et enregistrement dans la bibliothèque (série + `series_index` exact, y compris
+  chapitres décimaux). Les images restent hors du dépôt (sous `data/`, ignoré).
+
 ## [2.5.0] - 2026-08-28
 
 ### Added
