@@ -591,24 +591,33 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 }
 
 /* Comic Reader */
+/* Width reserved on each side for the prev/next nav bars. The page fills the
+   space BETWEEN them (as wide as possible) without covering the controls. */
+#comic-container { --comic-nav-w: 64px; }
 #comic-container {
   flex: 1; display: flex; align-items: flex-start;
   justify-content: center; overflow: auto;
   position: relative; background: #000;
+  padding: 0 var(--comic-nav-w); box-sizing: border-box;
 }
-/* Manhua/webtoon default: fit WIDTH (fill the width, scroll vertically) rather
-   than fit height, which shrank tall pages into a narrow centred column. */
+/* Manhua/webtoon default: fill the width of the central area (between the nav
+   bars) and scroll vertically, rather than fit-height (narrow centred column). */
 #comic-container img {
   width: 100%; height: auto; object-fit: contain;
 }
 .comic-nav {
-  position: fixed; top: 0; bottom: 0; width: 30%;
-  cursor: pointer; z-index: 150; background: transparent;
-  border: none;
+  position: fixed; top: 0; bottom: 0; width: var(--comic-nav-w);
+  cursor: pointer; z-index: 150; border: none;
+  background: rgba(0,0,0,0.30); color: #fff;
+  font-size: 34px; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.15s;
 }
 .comic-nav.prev { left: 0; }
 .comic-nav.next { right: 0; }
-.comic-nav:hover { background: #fff1; }
+.comic-nav.prev::before { content: "\2039"; }
+.comic-nav.next::before { content: "\203A"; }
+.comic-nav:hover { background: rgba(0,0,0,0.55); }
 .page-indicator {
   position: fixed; bottom: 16px; left: 50%;
   transform: translateX(-50%); background: #000b;
@@ -886,14 +895,11 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   .epub-nav.prev { left: 0; }
   .epub-nav.next { right: 0; }
 
+  #comic-container { --comic-nav-w: 44px; }
   #comic-container img, #comic-img {
     width: 100%; height: auto; object-fit: contain;
   }
-  .comic-nav {
-    width: 30%; background: transparent; opacity: 0;
-    padding: 0; top: 0; bottom: 0; height: auto;
-    transform: none;
-  }
+  .comic-nav { font-size: 26px; }
   .page-indicator { font-size: 14px; padding: 6px 16px; }
 }
 

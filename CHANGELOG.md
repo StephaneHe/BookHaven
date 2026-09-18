@@ -5,6 +5,18 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.5.3] - 2026-09-18
+
+### Changed
+- **Lecteur comic : la page remplit la zone centrale ENTRE les boutons de
+  navigation** au lieu de toute la largeur. Le fit-width plein écran précédent
+  recouvrait les zones de navigation gauche/droite (boutons invisibles et
+  gênés). Les boutons prev/next sont maintenant des **bandes latérales visibles
+  et cliquables** (largeur réservée 64 px desktop / 44 px mobile, fond translucide
+  + chevrons ‹ ›), et l'image occupe la largeur maximale entre elles. Défilement
+  vertical conservé. Changement de template → **rechargement auto** (le correctif
+  est déjà actif ; un redémarrage Flask ne sert qu'à rafraîchir le n° de version).
+
 ## [2.5.2] - 2026-09-18
 
 ### Changed

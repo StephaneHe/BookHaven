@@ -1,5 +1,17 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Lecteur web : image entre les boutons (correctif fit-width)
+
+- [x] Le fit-width plein écran recouvrait les boutons prev/next → l'image remplit
+      désormais la **zone centrale entre les boutons** (gutters 64 px desktop /
+      44 px mobile). Boutons rendus **visibles + cliquables** (fond translucide +
+      chevrons ‹ ›). Scroll vertical conservé, navigation avant/arrière OK.
+- [x] Vérifié headless (1000px) : image 64→936 px, boutons dans les gutters, pas
+      de recouvrement, clic Next 1/969→2/969. Web v2.5.3.
+- [x] Template auto-reload → **pas de redémarrage Flask requis** pour le correctif
+      (redémarrage seulement pour afficher le nouveau n° de version).
+
+
 ## 2026-09-18 — Quickfix manhua (pubs + fit-width)
 
 - [x] **Pubs retirées** : détection (`scripts/manhua_adfilter.py`) — pub 728×90
