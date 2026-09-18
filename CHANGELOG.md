@@ -5,6 +5,31 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.3] - 2026-09-18
+
+### Fixed
+- **Audit d'intégrité du manhua « Sir, Don't Show Off ».** Scan complet des 217
+  chapitres / 1045 images (`scripts/check_manhua_integrity.py`, décodage PIL +
+  marqueurs de fin JPEG/PNG/WEBP). Résultat : **0 image de contenu tronquée**.
+  Les 74 images signalées « bad-end-marker » étaient un **unique GIF publicitaire
+  728×90** (md5 `ed6d7bf6aa`) servi par roliascan en fin de chapitre sous une
+  fausse extension `.jpg` — déjà exclu du CBZ par `manhua_adfilter.py`, désormais
+  retiré des données (sauvegarde `backup/manhua_ad_cleanup/`). CBZ **régénéré**
+  (969 pages, contenu inchangé ; `.orig` + `.pre-regen.bak` conservés).
+
+### Changed
+- **`__version__` 2.7.2 → 2.7.3.** ⚠️ **Redémarrage Flask requis** (uniquement
+  pour refléter la version ; aucun autre changement de code).
+
+### Notes
+- **Chapitre 50 (et ~42 chapitres au total) tronqués À LA SOURCE.** roliascan ne
+  sert qu'une planche unique `page_001_stitched.webp` coupée en plein panneau à
+  un gabarit fixe (14183 px ×20 ch., 14171 px ×11, 14748 px ×5, etc.) — copie
+  **identique octet pour octet** au CDN, sans `page_002` ni panneaux individuels.
+  **La fin manquante du ch50 n'est récupérable sur aucune URL roliascan** ; seule
+  une source/miroir alternatif (hors périmètre autorisé) le permettrait. Détail :
+  `docs/manhua-integrity-report-2026-09-18.md`.
+
 ## [2.7.2] - 2026-09-18
 
 ### Added

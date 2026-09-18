@@ -1,5 +1,15 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Audit intégrité manhua « Sir, Don't Show Off » (web 2.7.3)
+
+- [x] Scan intégrité 217 ch / 1045 img : **0 image de contenu tronquée**. Les 74
+      « bad-end-marker » = un GIF pub 728×90 unique (déjà filtré du CBZ), retiré des
+      données. CBZ régénéré (969 pages, contenu identique), sauvegardes conservées.
+- [ ] **À décider (utilisateur)** : ~42 chapitres (dont le ch50) sont tronqués **à la
+      source** par roliascan (planche unique coupée à gabarit fixe, identique au CDN,
+      sans page_002). **Irrécupérable depuis roliascan.** Envisager un miroir alternatif
+      (hors périmètre autorisé). Détail : `docs/manhua-integrity-report-2026-09-18.md`.
+
 ## 2026-09-18 — Refonte P0 (Opus 4.8) — voir docs/bookhaven-refonte-progress.md
 
 - [x] **P0-A Verrou SQLite** (Flask 2.7.1 + Android 1.5.2/56) : `database.writing()`
