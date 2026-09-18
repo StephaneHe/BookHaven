@@ -5,16 +5,18 @@ Un commit par lot. Tests sur instance démo isolée / DB de test. NE PUSH PAS.
 
 | Lot | Statut | Horodatage | Notes |
 |---|---|---|---|
-| P0-A Verrou SQLite (Flask + Android) | **done** | 2026-09-18 | commit ci-dessous ; pytest 3/3 ; Android compile à valider au build P0-B |
-| P0-B Crash lecteur OOM (Android) | in-progress | 2026-09-18 | — |
-| P0-C Pagination + tris + facettes (Flask + Android) | pending | — | — |
+| P0-A Verrou SQLite (Flask + Android) | **done** | 2026-09-18 | commit dd79050 ; pytest 3/3 |
+| P0-B Crash lecteur OOM (Android) | **done** | 2026-09-18 | build APK OK (12:17) ; à valider émulateur |
+| P0-C Pagination + tris + facettes (Flask + Android) | in-progress | 2026-09-18 | — |
 | P0-D Refonte visible (Android) | pending | — | — |
 
 ## PROCHAINE ACTION
-P0-B : `ApiService` + `getComicPages`/`comic-page/{n}` ; `ComicReaderFragment` lecteur par
-références (cache disque LRU en ligne, `ZipFile` à la demande offline) ; `ComicPageAdapter` via
-`SubsamplingScaleImageView` (dépendance Gradle) ; supprimer `List<ByteArray>` + `decodeByteArray`.
-Puis `./gradlew assembleDebug` (valide aussi la compil P0-A Android). Redémarrage Flask requis pour P0-A.
+P0-C : **Flask** — ajouter tris `added_desc` (`added_at DESC, id DESC`) et `last_read_desc`
+(jointure reading_progress du profil) dans `sort_map` de `/api/books`, SANS casser `recent`.
+**Android** — exposer `page`/`perPage` dans `ApiService`+`BookRepository`, pagination infinie dans
+`LibraryViewModel`/`LibraryFragment` (charger en fin de liste, afficher total), facettes via
+`/api/filters`, sélecteur de tri (défaut Récemment ajoutés), recherche debounce 300 ms + annulation,
+snapshot hors-ligne cumulatif. Redémarrage Flask requis (P0-C touche le serveur).
 
 ## Journal
 - 2026-09-18 — Début. Fichier de progression créé.

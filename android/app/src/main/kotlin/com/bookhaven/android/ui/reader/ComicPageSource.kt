@@ -1,0 +1,87 @@
+package com.bookhaven.android.ui.reader
+
+import android.content.Context
+import com.bookhaven.android.data.api.ApiService
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
+import java.io.File
+import java.util.zip.ZipFile
+
+/**
+ * Serves comic pages ONE AT A TIME as cached Files — never the whole archive in
+ * RAM (that was the OOM crash). Online: GET /api/books/<id>/comic-page/<n>.
+ * Offline: read a single entry from the local CBZ with ZipFile (random access via
+ * the central directory, not a full ZipInputStream sweep from the start). Fetched
+ * pages live in a bounded LRU disk cache under cacheDir/comic_pages.
+ */
+class ComicPageSource(
+    context: Context,
+    private val bookId: Int,
+    private val api: ApiService,
+    private val localCbz: File?,
+) {
+    private val cacheDir = File(context.cacheDir, "comic_pages").apply { mkdirs() }
+    private val imageExts = setOf("jpg", "jpeg", "png", "webp", "gif")
+    private val zipLock = Mutex()
+    private var entryNames: List<String>? = null
+    private var count = -1
+
+    suspend fun pageCount(): Int {
+        if (count >= 0) return count
+        count = if (localCbz != null) {
+            withContext(Dispatchers.IO) {
+                ZipFile(localCbz).use { z ->
+                    entryNames = z.entries().asSequence()
+                        .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in imageExts }
+                        .map { it.name }.sorted().toList()
+                    entryNames!!.size
+                }
+            }
+        } else {
+            api.getComicPages(bookId).pages.size
+        }
+        return count
+    }
+
+    /** A cached File for page [index] (fetched or extracted on demand). Null on failure. */
+    suspend fun pageFile(index: Int): File? = withContext(Dispatchers.IO) {
+        val dest = File(cacheDir, "b${bookId}_p${index}.img")
+        if (dest.exists() && dest.length() > 0) {
+            dest.setLastModified(System.currentTimeMillis())   // LRU touch
+            return@withContext dest
+        }
+        try {
+            val tmp = File(cacheDir, "b${bookId}_p${index}.part")
+            if (localCbz != null) {
+                val names = entryNames ?: run { pageCount(); entryNames!! }
+                val name = names.getOrNull(index) ?: return@withContext null
+                zipLock.withLock {
+                    ZipFile(localCbz).use { z ->
+                        z.getInputStream(z.getEntry(name)).use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+                    }
+                }
+            } else {
+                api.getComicPage(bookId, index).byteStream().use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }
+            }
+            if (!tmp.renameTo(dest)) { tmp.copyTo(dest, overwrite = true); tmp.delete() }
+            trimCache()
+            dest
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun trimCache() {
+        val files = cacheDir.listFiles { f -> f.name.endsWith(".img") }?.toList() ?: return
+        var total = files.sumOf { it.length() }
+        if (total <= MAX_CACHE_BYTES) return
+        for (f in files.sortedBy { it.lastModified() }) {
+            if (total <= MAX_CACHE_BYTES) break
+            total -= f.length(); f.delete()
+        }
+    }
+
+    companion object { private const val MAX_CACHE_BYTES = 300L * 1024 * 1024 }
+}

@@ -1,5 +1,19 @@
 # Changelog — BookHaven Android
 
+## [1.6.0] - 2026-09-18
+
+### Fixed
+- **Crash mémoire (OOM) à l'ouverture des gros comics/manhua (refonte P0-B).**
+  Le lecteur chargeait TOUTES les images de l'archive en RAM (~695 Mio pour le
+  manhua fusionné) puis décodait des bitmaps pleine taille sur le thread UI.
+  Réécrit en **accès page par page** : en ligne via `GET /api/books/<id>/comic-pages`
+  + `/comic-page/<n>`, hors-ligne via `ZipFile` (accès direct à l'entrée demandée,
+  plus de `ZipInputStream` intégral), avec **cache disque LRU borné (300 Mo)**.
+  Affichage via **SubsamplingScaleImageView** (tuilage + sous-échantillonnage via
+  `BitmapRegionDecoder`, gère les longues planches ~15 000 px) ; images recyclées
+  hors écran. Suppression de `List<ByteArray>` et `BitmapFactory.decodeByteArray`.
+  (Scroll vertical webtoon = P1 ; on garde le ViewPager2 paginé pour l'instant.)
+
 ## [1.5.2] - 2026-09-18
 
 ### Fixed

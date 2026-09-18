@@ -13,8 +13,8 @@ android {
         applicationId = "com.bookhaven.android"
         minSdk = 26
         targetSdk = 35
-        versionCode = 56
-        versionName = "1.5.2"
+        versionCode = 57
+        versionName = "1.6.0"
     }
 
     buildTypes {
@@ -59,6 +59,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.coil)
+    implementation(libs.subsampling.scale.image.view)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)

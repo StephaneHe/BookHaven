@@ -2,6 +2,7 @@ package com.bookhaven.android.data.api
 
 import com.bookhaven.android.data.api.model.Book
 import com.bookhaven.android.data.api.model.BooksResponse
+import com.bookhaven.android.data.api.model.ComicPagesResponse
 import com.bookhaven.android.data.api.model.CreateUserRequest
 import com.bookhaven.android.data.api.model.LoginRequest
 import com.bookhaven.android.data.api.model.LoginResponse
@@ -67,6 +68,14 @@ interface ApiService {
     @Streaming
     @GET("api/books/{id}/file")
     suspend fun downloadBook(@Path("id") id: Int): ResponseBody
+
+    // Page-at-a-time comic access, so the reader never holds the whole archive in RAM.
+    @GET("api/books/{id}/comic-pages")
+    suspend fun getComicPages(@Path("id") id: Int): ComicPagesResponse
+
+    @Streaming
+    @GET("api/books/{id}/comic-page/{n}")
+    suspend fun getComicPage(@Path("id") id: Int, @Path("n") n: Int): ResponseBody
 
     @GET("api/books/{id}/progress")
     suspend fun getProgress(@Path("id") id: Int): ProgressResponse

@@ -7,7 +7,7 @@
       `api_get_progress` → 404 si livre absent ; `media_worker` commit par UPDATE ;
       `SyncRepository` purge sur 404. Test `tests/test_db_writing_lock.py` (3 verts).
       **Redémarrage Flask requis.**
-- [ ] P0-B Crash lecteur OOM (Android) — lecteur par références + SubsamplingScaleImageView.
+- [x] **P0-B Crash lecteur OOM** (Android 1.6.0/57) : lecteur page par page (API comic-pages/comic-page en ligne, ZipFile offline, cache LRU 300 Mo) + SubsamplingScaleImageView (tuilage). Build APK OK. À valider sur émulateur/device (ouverture manhua 729 Mo sans OOM).
 - [ ] P0-C Pagination + tris + facettes (Flask + Android).
 - [ ] P0-D Refonte visible (Android) — Accueil/Bibliothèque/Téléchargements.
 
