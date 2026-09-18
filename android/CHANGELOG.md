@@ -1,5 +1,16 @@
 # Changelog — BookHaven Android
 
+## [1.6.1] - 2026-09-18
+
+### Changed
+- **Bibliothèque : pagination infinie + tris + facettes serveur (refonte P0-C).**
+  L'app ne se limite plus aux 50 premiers livres : elle pagine (`page`/`perPage`)
+  et charge la suite en fin de liste sur ~9 500 livres. Les filtres (catégories,
+  genres **distincts**, formats) viennent de `/api/filters` (facettes complètes,
+  plus déduites des 50 affichés). Sélecteur de **tri** (Récemment ajoutés par
+  défaut, Récemment lus, Titre, Auteur). Recherche **anti-rebond 300 ms** avec
+  annulation de la requête précédente. Snapshot hors-ligne **cumulatif**.
+
 ## [1.6.0] - 2026-09-18
 
 ### Fixed

@@ -4,6 +4,7 @@ import com.bookhaven.android.data.api.model.Book
 import com.bookhaven.android.data.api.model.BooksResponse
 import com.bookhaven.android.data.api.model.ComicPagesResponse
 import com.bookhaven.android.data.api.model.CreateUserRequest
+import com.bookhaven.android.data.api.model.FiltersResponse
 import com.bookhaven.android.data.api.model.LoginRequest
 import com.bookhaven.android.data.api.model.LoginResponse
 import com.bookhaven.android.data.api.model.MeResponse
@@ -40,6 +41,9 @@ interface ApiService {
         @Query("page") page: Int = 1,
         @Query("per_page") perPage: Int = 50
     ): BooksResponse
+
+    @GET("api/filters")
+    suspend fun getFilters(): FiltersResponse
 
     @GET("api/books/{id}")
     suspend fun getBookDetail(@Path("id") id: Int): Book

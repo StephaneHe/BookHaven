@@ -5,6 +5,15 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.2] - 2026-09-18
+
+### Added
+- **Tris de bibliothèque explicites (refonte P0-C).** `/api/books` accepte
+  `sort=added_desc` (`added_at DESC, id DESC` — « Récemment ajoutés ») et
+  `sort=last_read_desc` (jointure `reading_progress` du profil, jamais-lus en
+  fin — « Récemment lus »). `recent` (`modified_at`) est conservé pour
+  compatibilité. ⚠️ **Redémarrage Flask requis.**
+
 ## [2.7.1] - 2026-09-18
 
 ### Fixed

@@ -8,7 +8,10 @@
       `SyncRepository` purge sur 404. Test `tests/test_db_writing_lock.py` (3 verts).
       **Redémarrage Flask requis.**
 - [x] **P0-B Crash lecteur OOM** (Android 1.6.0/57) : lecteur page par page (API comic-pages/comic-page en ligne, ZipFile offline, cache LRU 300 Mo) + SubsamplingScaleImageView (tuilage). Build APK OK. À valider sur émulateur/device (ouverture manhua 729 Mo sans OOM).
-- [ ] P0-C Pagination + tris + facettes (Flask + Android).
+- [x] **P0-C Pagination + tris + facettes** (Flask 2.7.2 + Android 1.6.1/58) :
+      `/api/books` tris `added_desc`/`last_read_desc` ; Android pagination infinie
+      + facettes `/api/filters` + sélecteur de tri + recherche debounce 300 ms +
+      snapshot hors-ligne cumulatif. compileDebugKotlin OK. **Redémarrage Flask requis.**
 - [ ] P0-D Refonte visible (Android) — Accueil/Bibliothèque/Téléchargements.
 
 ## 2026-09-18 — Manhua en défilement vertical continu (webtoon)

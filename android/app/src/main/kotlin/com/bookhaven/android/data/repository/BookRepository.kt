@@ -18,15 +18,22 @@ class BookRepository @Inject constructor(private val api: ApiService) {
         genre: String? = null,
         author: String? = null,
         format: String? = null,
-        sort: String? = null
+        sort: String? = null,
+        page: Int = 1,
+        perPage: Int = 60
     ): BooksResponse = api.getBooks(
         search = search?.takeIf { it.isNotBlank() },
         category = category?.takeIf { it.isNotBlank() },
         genre = genre?.takeIf { it.isNotBlank() },
         author = author?.takeIf { it.isNotBlank() },
         format = format?.takeIf { it.isNotBlank() },
-        sort = sort?.takeIf { it.isNotBlank() }
+        sort = sort?.takeIf { it.isNotBlank() },
+        page = page,
+        perPage = perPage
     )
+
+    /** Server-wide facet lists (all categories/genres/formats), not the facets of one page. */
+    suspend fun getFilters() = api.getFilters()
 
     suspend fun getBookDetail(id: Int): Book = api.getBookDetail(id)
 

@@ -7,16 +7,16 @@ Un commit par lot. Tests sur instance démo isolée / DB de test. NE PUSH PAS.
 |---|---|---|---|
 | P0-A Verrou SQLite (Flask + Android) | **done** | 2026-09-18 | commit dd79050 ; pytest 3/3 |
 | P0-B Crash lecteur OOM (Android) | **done** | 2026-09-18 | build APK OK (12:17) ; à valider émulateur |
-| P0-C Pagination + tris + facettes (Flask + Android) | in-progress | 2026-09-18 | — |
-| P0-D Refonte visible (Android) | pending | — | — |
+| P0-C Pagination + tris + facettes (Flask + Android) | **done** | 2026-09-18 | compileDebugKotlin OK ; SQL smoke-test OK |
+| P0-D Refonte visible (Android) | in-progress | 2026-09-18 | — |
 
 ## PROCHAINE ACTION
-P0-C : **Flask** — ajouter tris `added_desc` (`added_at DESC, id DESC`) et `last_read_desc`
-(jointure reading_progress du profil) dans `sort_map` de `/api/books`, SANS casser `recent`.
-**Android** — exposer `page`/`perPage` dans `ApiService`+`BookRepository`, pagination infinie dans
-`LibraryViewModel`/`LibraryFragment` (charger en fin de liste, afficher total), facettes via
-`/api/filters`, sélecteur de tri (défaut Récemment ajoutés), recherche debounce 300 ms + annulation,
-snapshot hors-ligne cumulatif. Redémarrage Flask requis (P0-C touche le serveur).
+P0-D : **Android** — nav basse Accueil/Bibliothèque/Téléchargements (Réglages en barre/toolbar) ;
+créer `HomeFragment` (Reprendre = dernière lecture via `/api/continue-reading` premier item ;
+rail « En cours » ; rail « Récemment ajoutés » via `/api/books?sort=added_desc` ; raccourcis
+Catégories via `/api/filters`). Renommer OfflineFragment → « Téléchargements ». Retirer le rail
+Continue Reading de LibraryFragment (déplacé vers Accueil). Puis `./gradlew assembleDebug` (APK final).
+Redémarrage Flask requis pour P0-A/P0-C.
 
 ## Journal
 - 2026-09-18 — Début. Fichier de progression créé.

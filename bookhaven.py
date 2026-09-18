@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.7.1"
+__version__ = "2.7.2"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -642,17 +642,31 @@ def api_books():
         count_query = query.replace("SELECT *", "SELECT COUNT(*)")
         total = conn.execute(count_query, params).fetchone()[0]
 
-        # Sort
+        # Sort. "recent" (modified_at) is kept for backward-compat; the two
+        # explicit reading sorts are added_desc ("Récemment ajoutés", the default
+        # library sort) and last_read_desc ("Récemment lus", per profile).
         sort_map = {
             "title": "title COLLATE NOCASE ASC",
             "author": "author COLLATE NOCASE ASC, title COLLATE NOCASE ASC",
             "recent": "modified_at DESC",
+            "added_desc": "added_at DESC, id DESC",
             "series": "series COLLATE NOCASE ASC, series_index ASC",
         }
-        query += f" ORDER BY {sort_map.get(sort, sort_map['title'])}"
-        query += f" LIMIT {per_page} OFFSET {(page - 1) * per_page}"
-
-        rows = conn.execute(query, params).fetchall()
+        offset = f" LIMIT {per_page} OFFSET {(page - 1) * per_page}"
+        if sort == "last_read_desc":
+            # Books this profile read most recently first; never-read books last.
+            uid = session["user_id"]
+            joined = query.replace(
+                "SELECT * FROM books WHERE 1=1",
+                "SELECT books.* FROM books "
+                "LEFT JOIN reading_progress rp ON rp.book_id = books.id AND rp.user_id = ? "
+                "WHERE 1=1")
+            joined += (" ORDER BY (rp.last_read IS NULL) ASC, rp.last_read DESC, books.id DESC"
+                       + offset)
+            rows = conn.execute(joined, [uid] + params).fetchall()
+        else:
+            query += f" ORDER BY {sort_map.get(sort, sort_map['title'])}" + offset
+            rows = conn.execute(query, params).fetchall()
         books = [dict(row) for row in rows]
         books = _group_format_variants(books)
 

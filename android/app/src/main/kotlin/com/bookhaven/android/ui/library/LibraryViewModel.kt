@@ -27,12 +27,18 @@ sealed class LibraryState {
     object Loading : LibraryState()
     data class Success(
         val books: List<Book>,
-        val categories: List<String>,
-        val genres: List<String>,
-        val formats: List<String>
+        val hasMore: Boolean,
+        val total: Int
     ) : LibraryState()
     data class Error(val message: String) : LibraryState()
 }
+
+/** Server-wide facets. categories and genres are DISTINCT filter dimensions. */
+data class Facets(
+    val categories: List<String> = emptyList(),
+    val genres: List<String> = emptyList(),
+    val formats: List<String> = emptyList()
+)
 
 @HiltViewModel
 class LibraryViewModel @Inject constructor(
@@ -59,69 +65,104 @@ class LibraryViewModel @Inject constructor(
     private val _sessionExpired = MutableSharedFlow<Unit>()
     val sessionExpired: SharedFlow<Unit> = _sessionExpired.asSharedFlow()
 
+    private val _facets = MutableStateFlow(Facets())
+    val facets: StateFlow<Facets> = _facets.asStateFlow()
+
     var currentSearch: String = ""
     var currentCategory: String = ""
     var currentGenre: String = ""
     var currentFormat: String = ""
+    var currentSort: String = "added_desc"   // "Récemment ajoutés" — default library sort
 
-    init { loadAll() }
+    private val perPage = 60
+    private var page = 1
+    private var pages = 1
+    private var total = 0
+    private val loaded = mutableListOf<Book>()
+    private var loading = false
+
+    init { loadFacets(); loadAll() }
 
     fun loadAll() {
         loadBooks()
         loadContinueReading()
     }
 
-    fun loadBooks(
-        search: String = currentSearch,
-        category: String = currentCategory,
-        genre: String = currentGenre,
-        format: String = currentFormat
-    ) {
-        currentSearch = search; currentCategory = category
-        currentGenre = genre; currentFormat = format
-        val unfiltered = search.isBlank() && category.isBlank() && genre.isBlank() && format.isBlank()
+    private fun isUnfiltered() =
+        currentSearch.isBlank() && currentCategory.isBlank() &&
+            currentGenre.isBlank() && currentFormat.isBlank()
+
+    /** Server-wide filter facets (all categories/genres/formats, not one page's). */
+    fun loadFacets() {
         viewModelScope.launch {
-            // Only flash the spinner when we have nothing to show yet, so switching tabs
-            // back to the library doesn't blank out already-loaded content.
-            if (_state.value !is LibraryState.Success) _state.value = LibraryState.Loading
-            runCatching {
-                bookRepo.getBooks(
-                    search = search.takeIf { it.isNotBlank() },
-                    category = category.takeIf { it.isNotBlank() },
-                    genre = genre.takeIf { it.isNotBlank() },
-                    format = format.takeIf { it.isNotBlank() }
-                )
-            }.onSuccess { resp ->
-                val books = resp.books
-                _state.value = buildSuccess(books)
-                // Refresh the offline snapshot only on a full, unfiltered load.
-                if (unfiltered) runCatching { downloadRepo.cacheLibrary(books) }
-            }.onFailure { e ->
-                Log.e(TAG, "loadBooks() failed", e)
-                when {
-                    e is HttpException && e.code() == 401 ->
-                        _sessionExpired.emit(Unit)   // Fix 4 — route back to login, no error dialog
-                    else -> {
-                        // Network/server error: fall back to the cached library instead of failing.
-                        val cached = runCatching { downloadRepo.getCachedLibrary() }.getOrDefault(emptyList())
-                        if (cached.isNotEmpty()) {
-                            _state.value = buildSuccess(cached)
-                            _toast.value = "Mode hors-ligne"
-                        } else {
-                            _state.value = LibraryState.Error(e.toUserMessage())
-                        }
-                    }
-                }
+            runCatching { bookRepo.getFilters() }.onSuccess {
+                _facets.value = Facets(it.categories, it.genres, it.formats)
             }
         }
     }
 
-    private fun buildSuccess(books: List<Book>) = LibraryState.Success(
-        books = books,
-        categories = listOf("") + books.map { it.category }.filter { it.isNotBlank() }.distinct().sorted(),
-        genres = listOf("") + books.map { it.genre }.filter { it.isNotBlank() }.distinct().sorted(),
-        formats = listOf("") + books.map { it.format }.filter { it.isNotBlank() }.distinct().sorted()
-    )
+    fun setSort(sort: String) { if (sort != currentSort) loadBooks(sort = sort) }
+
+    fun loadBooks(
+        search: String = currentSearch,
+        category: String = currentCategory,
+        genre: String = currentGenre,
+        format: String = currentFormat,
+        sort: String = currentSort
+    ) {
+        currentSearch = search; currentCategory = category
+        currentGenre = genre; currentFormat = format; currentSort = sort
+        page = 1
+        viewModelScope.launch { fetchPage(reset = true) }
+    }
+
+    /** Load the next page (called when the grid nears its end). */
+    fun loadMore() {
+        val st = _state.value
+        if (loading || st !is LibraryState.Success || !st.hasMore) return
+        page += 1
+        viewModelScope.launch { fetchPage(reset = false) }
+    }
+
+    private suspend fun fetchPage(reset: Boolean) {
+        if (loading) return
+        loading = true
+        if (reset && _state.value !is LibraryState.Success) _state.value = LibraryState.Loading
+        runCatching {
+            bookRepo.getBooks(
+                search = currentSearch.takeIf { it.isNotBlank() },
+                category = currentCategory.takeIf { it.isNotBlank() },
+                genre = currentGenre.takeIf { it.isNotBlank() },
+                format = currentFormat.takeIf { it.isNotBlank() },
+                sort = currentSort, page = page, perPage = perPage
+            )
+        }.onSuccess { resp ->
+            if (reset) loaded.clear()
+            loaded.addAll(resp.books)
+            pages = resp.pages; total = resp.total
+            val hasMore = page < pages && resp.books.isNotEmpty()
+            _state.value = LibraryState.Success(loaded.toList(), hasMore = hasMore, total = total)
+            // Cumulative offline snapshot on the default unfiltered view (no 50 cap).
+            if (isUnfiltered()) runCatching { downloadRepo.cacheLibrary(loaded.toList()) }
+        }.onFailure { e ->
+            Log.e(TAG, "fetchPage($page) failed", e)
+            when {
+                e is HttpException && e.code() == 401 -> _sessionExpired.emit(Unit)
+                reset -> {
+                    val cached = runCatching { downloadRepo.getCachedLibrary() }.getOrDefault(emptyList())
+                    if (cached.isNotEmpty()) {
+                        loaded.clear(); loaded.addAll(cached)
+                        _state.value = LibraryState.Success(loaded.toList(), hasMore = false, total = cached.size)
+                        _toast.value = "Mode hors-ligne"
+                    } else {
+                        _state.value = LibraryState.Error(e.toUserMessage())
+                    }
+                }
+                else -> page -= 1   // roll back so loadMore() can retry the same page
+            }
+        }
+        loading = false
+    }
 
     fun loadContinueReading() {
         viewModelScope.launch {
