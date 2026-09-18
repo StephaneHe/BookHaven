@@ -14,7 +14,14 @@ import mimetypes
 import traceback
 import subprocess
 from functools import wraps
+from contextlib import closing
 from io import BytesIO
+
+
+class BookNotFound(Exception):
+    """Raised inside a write unit when the target book no longer exists, so the
+    route can answer 404 and the client can drop stale progress instead of
+    retrying forever (the retry loop was what triggered the recurring DB lock)."""
 
 from flask import (
     Flask, request, jsonify, send_file, send_from_directory,
@@ -38,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.7.0"
+__version__ = "2.7.1"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -585,14 +592,11 @@ def api_create_user():
         return jsonify({"error": "Name is required"}), 400
     import uuid
     user_id = uuid.uuid4().hex
-    conn = database.get_db()
     try:
-        conn.execute("INSERT INTO users (id, name) VALUES (?, ?)", (user_id, name))
-        conn.commit()
+        with database.writing() as conn:
+            conn.execute("INSERT INTO users (id, name) VALUES (?, ?)", (user_id, name))
     except Exception:
-        conn.close()
         return jsonify({"error": "User already exists"}), 409
-    conn.close()
     return jsonify({"ok": True, "id": user_id, "name": name})
 
 
@@ -1094,13 +1098,11 @@ def api_set_genre(book_id):
     try:
         data = request.get_json()
         genre = data.get("genre", "").strip()
-        conn = database.get_db()
-        conn.execute(
-            "UPDATE books SET genre = ?, genre_locked = 1, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (genre, book_id)
-        )
-        conn.commit()
-        conn.close()
+        with database.writing() as conn:
+            conn.execute(
+                "UPDATE books SET genre = ?, genre_locked = 1, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (genre, book_id)
+            )
         return jsonify({"ok": True, "genre": genre})
     except Exception as e:
         logger.error(f"Error in set_genre: {e}\n{traceback.format_exc()}")
@@ -1112,13 +1114,11 @@ def api_set_genre(book_id):
 def api_remove_book_series(book_id):
     """Remove a single book from its series (book is kept, series is cleared)."""
     try:
-        conn = database.get_db()
-        conn.execute(
-            "UPDATE books SET series = '', series_index = 0, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (book_id,)
-        )
-        conn.commit()
-        conn.close()
+        with database.writing() as conn:
+            conn.execute(
+                "UPDATE books SET series = '', series_index = 0, modified_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (book_id,)
+            )
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error in remove_book_series: {e}\n{traceback.format_exc()}")
@@ -1134,14 +1134,12 @@ def api_delete_series():
         series = data.get("series", "").strip()
         if not series:
             return jsonify({"error": "series name required"}), 400
-        conn = database.get_db()
-        result = conn.execute(
-            "UPDATE books SET series = '', series_index = 0, modified_at = CURRENT_TIMESTAMP WHERE series = ?",
-            (series,)
-        )
-        affected = result.rowcount
-        conn.commit()
-        conn.close()
+        with database.writing() as conn:
+            result = conn.execute(
+                "UPDATE books SET series = '', series_index = 0, modified_at = CURRENT_TIMESTAMP WHERE series = ?",
+                (series,)
+            )
+            affected = result.rowcount
         return jsonify({"ok": True, "affected": affected})
     except Exception as e:
         logger.error(f"Error in delete_series: {e}\n{traceback.format_exc()}")
@@ -1154,23 +1152,20 @@ def api_classify_genre(book_id):
     """Ask the local LLM to classify a book's genre."""
     try:
         from genre_ai import classify_genre
-        conn = database.get_db()
-        book = conn.execute("SELECT id, title, author, genre, description, genre_locked FROM books WHERE id = ?", (book_id,)).fetchone()
+        with closing(database.get_db()) as conn:
+            book = conn.execute("SELECT id, title, author, genre, description, genre_locked FROM books WHERE id = ?", (book_id,)).fetchone()
         if not book:
-            conn.close()
             return jsonify({"error": "Book not found"}), 404
         if book["genre_locked"]:
-            conn.close()
             return jsonify({"error": "Genre was manually set and is locked"}), 409
 
+        # Ollama call OUTSIDE any DB transaction (it's slow/network).
         genre = classify_genre(book["title"], book["author"], book["description"] or "")
         if not genre:
-            conn.close()
             return jsonify({"error": "AI classification unavailable (is Ollama running?)"}), 503
 
-        conn.execute("UPDATE books SET genre = ?, modified_at = CURRENT_TIMESTAMP WHERE id = ?", (genre, book_id))
-        conn.commit()
-        conn.close()
+        with database.writing() as conn:
+            conn.execute("UPDATE books SET genre = ?, modified_at = CURRENT_TIMESTAMP WHERE id = ?", (genre, book_id))
         return jsonify({"genre": genre})
     except Exception as e:
         logger.error(f"Error in classify_genre: {e}\n{traceback.format_exc()}")
@@ -1246,12 +1241,15 @@ def api_stats():
 @login_required
 def api_get_progress(book_id):
     try:
-        conn = database.get_db()
-        row = conn.execute(
-            "SELECT * FROM reading_progress WHERE user_id = ? AND book_id = ?",
-            (session["user_id"], book_id)
-        ).fetchone()
-        conn.close()
+        with closing(database.get_db()) as conn:
+            if not conn.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+                # Book removed (re-scan/import): let the client purge its stale
+                # local progress instead of pushing it back (which fails on FK).
+                return jsonify({"error": "book not found"}), 404
+            row = conn.execute(
+                "SELECT * FROM reading_progress WHERE user_id = ? AND book_id = ?",
+                (session["user_id"], book_id)
+            ).fetchone()
         if row:
             return jsonify(dict(row))
         return jsonify({"progress": 0, "current_location": ""})
@@ -1265,13 +1263,11 @@ def api_get_progress(book_id):
 def api_delete_progress(book_id):
     """Remove a book from the user's reading list."""
     try:
-        conn = database.get_db()
-        conn.execute(
-            "DELETE FROM reading_progress WHERE user_id = ? AND book_id = ?",
-            (session["user_id"], book_id)
-        )
-        conn.commit()
-        conn.close()
+        with database.writing() as conn:
+            conn.execute(
+                "DELETE FROM reading_progress WHERE user_id = ? AND book_id = ?",
+                (session["user_id"], book_id)
+            )
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error in api_delete_progress: {e}")
@@ -1282,22 +1278,28 @@ def api_delete_progress(book_id):
 @login_required
 def api_set_progress(book_id):
     try:
-        data = request.get_json()
+        data = request.get_json() or {}
         progress = float(data.get("progress", 0))
         location = str(data.get("current_location", ""))
+        user_id = session["user_id"]
 
-        conn = database.get_db()
-        conn.execute("""
-            INSERT INTO reading_progress (user_id, book_id, progress, current_location, last_read)
-            VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
-            ON CONFLICT(user_id, book_id) DO UPDATE SET
-                progress = excluded.progress,
-                current_location = excluded.current_location,
-                last_read = CURRENT_TIMESTAMP
-        """, (session["user_id"], book_id, progress, location))
-        conn.commit()
-        conn.close()
+        with database.writing() as conn:
+            # Reject progress for a book that no longer exists BEFORE the INSERT,
+            # so an FK violation can't leave the write transaction open (the
+            # leaked transaction is what locked the DB for every other writer).
+            if not conn.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+                raise BookNotFound()
+            conn.execute("""
+                INSERT INTO reading_progress (user_id, book_id, progress, current_location, last_read)
+                VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, book_id) DO UPDATE SET
+                    progress = excluded.progress,
+                    current_location = excluded.current_location,
+                    last_read = CURRENT_TIMESTAMP
+            """, (user_id, book_id, progress, location))
         return jsonify({"ok": True})
+    except BookNotFound:
+        return jsonify({"ok": False, "error": "book not found"}), 404
     except Exception as e:
         logger.error(f"Error in api_set_progress: {e}\n{traceback.format_exc()}")
         return jsonify({"ok": False, "error": "Internal server error"}), 500
@@ -2043,16 +2045,14 @@ def api_get_category_order():
 def api_save_category_order():
     data = request.get_json()
     order = data.get("order", [])
-    conn = database.get_db()
-    conn.execute("""
-        INSERT INTO user_category_order (user_id, category_order, updated_at)
-        VALUES (?, ?, CURRENT_TIMESTAMP)
-        ON CONFLICT(user_id) DO UPDATE SET
-            category_order = excluded.category_order,
-            updated_at = CURRENT_TIMESTAMP
-    """, (session["user_id"], json.dumps(order)))
-    conn.commit()
-    conn.close()
+    with database.writing() as conn:
+        conn.execute("""
+            INSERT INTO user_category_order (user_id, category_order, updated_at)
+            VALUES (?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                category_order = excluded.category_order,
+                updated_at = CURRENT_TIMESTAMP
+        """, (session["user_id"], json.dumps(order)))
     return jsonify({"ok": True})
 
 

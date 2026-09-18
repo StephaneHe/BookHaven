@@ -613,10 +613,8 @@ def _run_enrichment():
                 "UPDATE books SET has_cover=?, page_count=? WHERE id=?",
                 (1, updates.get("page_count", row["page_count"]), row["id"]),
             )
+            conn.commit()   # short write txn; never held across the next file read
             worker_status["covers_found"] += 1
-
-        if worker_status["processed"] % 50 == 0:
-            conn.commit()
 
     conn.commit()
     logger.info(f"Local extraction done: {worker_status['covers_found']} covers found")
@@ -655,8 +653,9 @@ def _run_enrichment():
             conn.execute("UPDATE books SET description=? WHERE id=?", (description, row["id"]))
             worker_status["descriptions_found"] += 1
 
-        if worker_status["processed"] % 20 == 0:
-            conn.commit()
+        # Commit this book NOW so no write transaction is ever held open across
+        # the next _search_online() network call (was the F04 lock-contention bug).
+        conn.commit()
 
         # Rate limit: ~2 requests/sec to be polite to APIs
         time.sleep(0.5)

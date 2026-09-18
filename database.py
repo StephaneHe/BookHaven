@@ -1,7 +1,31 @@
 """BookHaven database layer"""
 import sqlite3
 import os
+from contextlib import contextmanager
 import config
+
+
+@contextmanager
+def writing():
+    """Connection scoped to a single write unit.
+
+    The transaction commits on success and rolls back on ANY exception, and the
+    connection is ALWAYS closed. This is the fix for the recurring DB lock: a
+    failed write (e.g. an FK violation when saving progress for a book that was
+    deleted) previously skipped commit/close, leaving the transaction open until
+    cyclic GC collected the connection — blocking every other writer meanwhile.
+
+    Usage:
+        with database.writing() as conn:
+            conn.execute(...)     # SQL of one atomic unit; no slow work here
+    Put the route's error->HTTP handling OUTSIDE this block so the rollback runs.
+    """
+    conn = get_db()
+    try:
+        with conn:            # sqlite3: COMMIT on success / ROLLBACK on exception
+            yield conn
+    finally:
+        conn.close()
 
 
 def get_db():

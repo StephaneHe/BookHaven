@@ -5,6 +5,21 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.1] - 2026-09-18
+
+### Fixed
+- **Verrou récurrent de la base (refonte P0-A).** Une écriture de progression
+  échouée sur clé étrangère (livre supprimé) laissait la transaction ouverte
+  jusqu'au GC cyclique, bloquant toutes les autres écritures (`database is
+  locked`, y compris pour le serveur lui-même). Ajout de `database.writing()`
+  (context manager : commit sur succès, **rollback + close garantis** sur
+  erreur) appliqué aux routes d'écriture (`api_set_progress`, `api_delete_progress`,
+  `api_set_genre`, séries, `classify_genre`, `create_user`, `category-order`).
+  `api_set_progress`/`api_get_progress` renvoient **404** si le livre n'existe
+  plus (l'app purge alors sa progression obsolète au lieu de réessayer sans fin).
+  `media_worker` : commit **après chaque UPDATE**, plus jamais de transaction
+  tenue pendant un appel réseau. ⚠️ **Redémarrage Flask requis.**
+
 ## [2.7.0] - 2026-09-18
 
 ### Changed

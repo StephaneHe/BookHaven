@@ -1,5 +1,16 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Refonte P0 (Opus 4.8) — voir docs/bookhaven-refonte-progress.md
+
+- [x] **P0-A Verrou SQLite** (Flask 2.7.1 + Android 1.5.2/56) : `database.writing()`
+      (rollback+close garantis) sur routes d'écriture ; `api_set_progress`/
+      `api_get_progress` → 404 si livre absent ; `media_worker` commit par UPDATE ;
+      `SyncRepository` purge sur 404. Test `tests/test_db_writing_lock.py` (3 verts).
+      **Redémarrage Flask requis.**
+- [ ] P0-B Crash lecteur OOM (Android) — lecteur par références + SubsamplingScaleImageView.
+- [ ] P0-C Pagination + tris + facettes (Flask + Android).
+- [ ] P0-D Refonte visible (Android) — Accueil/Bibliothèque/Téléchargements.
+
 ## 2026-09-18 — Manhua en défilement vertical continu (webtoon)
 
 - [x] **Option retenue = 1 (chapitres + scroll continu)** implémentée SUR le livre

@@ -1,5 +1,13 @@
 # Changelog — BookHaven Android
 
+## [1.5.2] - 2026-09-18
+
+### Fixed
+- **Sync de progression (refonte P0-A).** `SyncRepository` purge désormais la
+  progression locale quand le serveur répond **404** (livre supprimé) au lieu de
+  la repousser sans fin — c'était le déclencheur du verrou SQLite côté serveur.
+  `pendingSync` n'est remis à `false` que si l'envoi a réellement réussi.
+
 ## [1.5.1] - 2026-09-15
 
 ### Fixed
