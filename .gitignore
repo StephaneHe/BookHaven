@@ -38,8 +38,10 @@ server.key
 .vscode/
 .idea/
 
-# Claude Code
-.claude/
+# Claude Code — ignore local config, but keep shared reusable skills in the repo.
+.claude/*
+!.claude/skills/
+!.claude/skills/**
 
 # Internal agent/working instructions — not for the public repo.
 /CLAUDE.md

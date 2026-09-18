@@ -5,6 +5,31 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.5] - 2026-09-18
+
+### Added
+- **Skill réutilisable « roliascan-manhua » + téléchargeur généralisé.** Capitalise
+  la méthode validée (download + réparation de « Sir, Don't Show Off ») pour
+  télécharger **n'importe quel** manhua de roliascan et l'intégrer à BookHaven :
+  - `.claude/skills/roliascan-manhua/SKILL.md` — skill Claude Code paramétré par
+    l'URL/slug de série.
+  - `scripts/download_roliascan.py <url|slug>` — pipeline **discover → download →
+    combine (CBZ unique) → import (1 livre)**, généralise `fetch_manhua_strips.py`,
+    `combine_manhua_cbz.py`, `manhua_adfilter.py`. Découverte auto (manga_id,
+    read-slug, liste des chapitres), mapping chapitre→dossier confirmé via
+    og:image, énumération des strips **par pas de 15 jusqu'au 404 réel** (CDN
+    `.org/storage`), filtrage pubs, contrôle d'intégrité, reprise, politesse.
+    Mode `--plan` (dry-run) ; enregistrement **non destructif** (ne rejoue pas
+    `finalize_manhua_single.py`) ; rapport d'**anomalies** à revoir.
+  - `docs/roliascan-download-rules.md` — règles consignées + section
+    « ⚠️ Exceptions à surveiller ».
+  Testé (mapping + énumération) sur la série connue : 216 chapitres, mapping
+  identité confirmé (og:image), énumération correcte, 0 anomalie.
+
+### Changed
+- **`__version__` 2.7.4 → 2.7.5.** ⚠️ **Redémarrage Flask requis** (reflet version ;
+  aucun changement de comportement serveur — ajout d'outillage/skill).
+
 ## [2.7.4] - 2026-09-18
 
 ### Fixed

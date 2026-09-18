@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Skill roliascan réutilisable (web 2.7.5)
+
+- [x] Skill `.claude/skills/roliascan-manhua/SKILL.md` + `scripts/download_roliascan.py`
+      (discover→download→combine→import, généralise fetch_manhua_strips/combine/adfilter,
+      mapping via og:image, strips pas-de-15→404 réel, `--plan`, non destructif, rapport
+      d'anomalies) + `docs/roliascan-download-rules.md`. Testé mapping+énumération sur la
+      série connue (216 ch, 0 anomalie).
+
 ## 2026-09-18 — Réparation manhua « Sir, Don't Show Off » (web 2.7.4)
 
 - [x] **Strips manquants récupérés.** Correction du diagnostic 2.7.3 (« tronqué à la
