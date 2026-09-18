@@ -5,6 +5,29 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.0] - 2026-09-18
+
+### Changed
+- **Lecture manhua/webtoon en DÉFILEMENT VERTICAL CONTINU** (au lieu de pages
+  tournées gauche/droite). Le contenu à planches hautes est **détecté
+  automatiquement** (ratio h/l de la 1re planche > 2) : les planches d'un
+  chapitre sont empilées et se lisent d'un seul scroll vertical, **sans boutons
+  page-flip**. Navigation **entre chapitres** : liste déroulante des 217
+  chapitres (dérivés des noms de planches, décimaux inclus) + boutons
+  **‹ / ›** (chapitre précédent/suivant) + bouton **« Chapitre suivant »** en
+  bas de chapitre. Chargement **par chapitre** (perfs). Les **comics normaux
+  restent paginés** (boutons gauche/droite conservés).
+- Le **zoom** (largeur des planches, mémorisé par livre) s'applique aussi au
+  mode continu. La **position** (indicateur planche `X / 969`) suit le scroll,
+  et sert d'« aller à » qui **scrolle** à la planche (mode continu) ou tourne la
+  page (mode paginé), sans réintroduire le page-flip pour le manhua.
+
+### Added
+- **Numéro de planche éditable** dans l'indicateur (saisie + Entrée / bouton ↵)
+  pour sauter directement à une planche ; bornes 1..total validées (clamp).
+
+Changements de template → **rechargement auto**, pas de redémarrage Flask requis.
+
 ## [2.6.0] - 2026-09-18
 
 ### Added

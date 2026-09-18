@@ -1,5 +1,29 @@
 # BookHaven — TODO
 
+## 2026-09-18 — Manhua en défilement vertical continu (webtoon)
+
+- [x] **Option retenue = 1 (chapitres + scroll continu)** implémentée SUR le livre
+      unique : les 217 chapitres sont dérivés des noms de planches (`NNNNN_NNN`,
+      prefix/10 = n° chapitre, décimaux inclus) → **pas de ré-import DB**, pas de
+      churn catalogue, scroll inter-chapitres possible. (Données brutes par
+      chapitre conservées dans `data/manhua/` en fallback si besoin d'un vrai
+      re-split.)
+- [x] Lecteur : mode **continu** auto-détecté (planche haute, h/l>2) → planches
+      d'un chapitre empilées, **scroll vertical**, **plus de page-flip**. Nav
+      chapitres : dropdown 217 + ‹ / › + « Chapitre suivant » en bas.
+      Chargement par chapitre (perfs).
+- [x] Comics normaux **restent paginés** (vérifié : 38983 page-flip 1→2 OK).
+- [x] Zoom conservé en continu ; indicateur planche suit le scroll ; « aller à »
+      scrolle (pas de page-flip). Progression restaurée (rouvre à la planche lue).
+- [x] Pubs (pages 728×90) déjà absentes. Web v2.7.0, template auto-reload → pas
+      de redémarrage Flask.
+
+### Suivi possible
+- [ ] Les **filigranes du ripper baked-in** (« NovelMic.Com », LIKEMANGA…) sont
+      dans les planches de contenu → non supprimables sans recadrage (hors scope).
+- [ ] Optionnel : auto-avance en fin de chapitre (actuellement bouton explicite).
+
+
 ## 2026-09-18 — Zoom lecteur web + mémorisation par livre
 
 - [x] Contrôles **+ / − / reset** dans la barre du lecteur comic + raccourcis

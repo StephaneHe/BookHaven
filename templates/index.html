@@ -507,6 +507,16 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 }
 .zoom-controls button:hover { background: #333; color: #fff; }
 #comic-zoom-label { font-variant-numeric: tabular-nums; }
+.chapter-controls { display: none; align-items: center; gap: 4px; }
+.chapter-controls button {
+  background: #222; color: #bbb; border: 1px solid #333;
+  border-radius: 5px; padding: 2px 9px; font-size: 13px; cursor: pointer; line-height: 1.4;
+}
+.chapter-controls button:hover { background: #333; color: #fff; }
+#comic-chapter-select {
+  background: #222; color: #ddd; border: 1px solid #333; border-radius: 5px;
+  font-size: 12px; padding: 2px 4px; max-width: 150px;
+}
 .theme-controls { display: none; align-items: center; gap: 5px; }
 .theme-dot {
   width: 15px; height: 15px; border-radius: 50%;
@@ -630,12 +640,41 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 .comic-nav.prev::before { content: "\2039"; }
 .comic-nav.next::before { content: "\203A"; }
 .comic-nav:hover { background: rgba(0,0,0,0.55); }
+/* Continuous (webtoon) mode: one vertical scroll of a chapter's plates, no
+   left/right page-flip. Plates use the same --comic-zoom width. */
+#comic-scroll { display: none; }
+#comic-container.continuous { padding-left: 0; padding-right: 0; }
+#comic-container.continuous > #comic-img,
+#comic-container.continuous > .comic-nav { display: none; }
+#comic-container.continuous > #comic-scroll { display: block; }
+#comic-scroll img { display: block; margin: 0 auto; width: var(--comic-zoom); height: auto; }
+.next-chapter-btn {
+  display: block; margin: 18px auto 40px; padding: 10px 26px;
+  background: #7c5cff; color: #fff; border: none; border-radius: 8px;
+  font-size: 15px; cursor: pointer;
+}
+.next-chapter-btn:hover { background: #6a4ce0; }
+.end-of-manhua { text-align: center; color: #888; padding: 28px 0 48px; font-size: 14px; }
 .page-indicator {
   position: fixed; bottom: 16px; left: 50%;
   transform: translateX(-50%); background: #000b;
   padding: 4px 12px; border-radius: 12px; font-size: 12px;
   z-index: 160;
+  display: none; align-items: center; gap: 4px;   /* shown (flex) only in the comic reader */
 }
+#comic-page-input {
+  width: 3.4em; text-align: center; background: #222; color: #fff;
+  border: 1px solid #444; border-radius: 6px; font-size: 12px;
+  padding: 1px 2px; -moz-appearance: textfield;
+}
+#comic-page-input::-webkit-outer-spin-button,
+#comic-page-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+#comic-page-total { color: #ccc; white-space: nowrap; }
+#comic-page-go {
+  background: #333; color: #ddd; border: 1px solid #444; border-radius: 6px;
+  padding: 0 6px; font-size: 13px; cursor: pointer; line-height: 1.6;
+}
+#comic-page-go:hover { background: #444; color: #fff; }
 
 /* ── Scan Banner ───────────────────────────────────────────── */
 .scan-banner {
@@ -1139,6 +1178,11 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
       <button id="comic-zoom-label" onclick="comicZoomReset()" title="Ajuster à la largeur (0)">100%</button>
       <button onclick="comicZoom(1)" title="Zoom avant (+)">+</button>
     </div>
+    <div class="chapter-controls" id="comic-chapter-controls">
+      <button onclick="comicChapterStep(-1)" title="Chapitre précédent">‹</button>
+      <select id="comic-chapter-select" onchange="comicGoToChapter(parseInt(this.value,10))" title="Aller au chapitre"></select>
+      <button onclick="comicChapterStep(1)" title="Chapitre suivant">›</button>
+    </div>
     <div class="theme-controls" id="theme-controls">
       <div class="theme-dot" data-theme="light" onclick="epubSetTheme('light')" title="Clair" style="background:#fff;"></div>
       <div class="theme-dot" data-theme="sepia" onclick="epubSetTheme('sepia')" title="Sépia" style="background:#f6f1e7;border-color:#b8a88a;"></div>
@@ -1175,7 +1219,14 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     <button class="comic-nav prev" onclick="comicPrev()"></button>
     <img id="comic-img" src="">
     <button class="comic-nav next" onclick="comicNext()"></button>
-    <div class="page-indicator" id="comic-page-info"></div>
+    <div id="comic-scroll"></div>
+    <div class="page-indicator" id="comic-page-info">
+      <input type="number" id="comic-page-input" min="1" inputmode="numeric"
+             onkeydown="if(event.key==='Enter'){comicJumpToInput();this.blur();}"
+             aria-label="Numéro de page">
+      <span id="comic-page-total"></span>
+      <button id="comic-page-go" onclick="comicJumpToInput()" title="Aller à la page (Entrée)">↵</button>
+    </div>
   </div>
 </div>
 
@@ -2171,6 +2222,8 @@ async function openBook(id) {
     document.getElementById('pdf-back-btn').style.display = 'none';
     document.getElementById('reader-view').classList.remove('pdf-active');
     document.getElementById('comic-container').style.display = 'none';
+    document.getElementById('comic-page-info').style.display = 'none';
+    document.getElementById('comic-chapter-controls').style.display = 'none';
 
     if (fmt === 'epub') {
       openEpub(id);
@@ -2211,6 +2264,11 @@ async function closeReader() {
   document.getElementById('font-controls').style.display = 'none';
   document.getElementById('theme-controls').style.display = 'none';
   document.getElementById('comic-zoom-controls').style.display = 'none';
+  document.getElementById('comic-page-info').style.display = 'none';
+  document.getElementById('comic-chapter-controls').style.display = 'none';
+  document.getElementById('comic-container').classList.remove('continuous');
+  document.getElementById('comic-scroll').innerHTML = '';
+  state.comicContinuous = false;
   document.getElementById('epub-container').style.background = '#fff';
   document.getElementById('epub-nav-bar').classList.remove('visible');
   document.getElementById('epub-jump-overlay').classList.remove('active');
@@ -2638,6 +2696,7 @@ async function openComic(bookId) {
   const container = document.getElementById('comic-container');
   container.style.display = 'block';
   document.getElementById('comic-zoom-controls').style.display = 'flex';
+  document.getElementById('comic-page-info').style.display = 'flex';
   comicZoomLoad(bookId);   // restore this book's saved zoom (or default)
 
   try {
@@ -2645,14 +2704,24 @@ async function openComic(bookId) {
     const data = await r.json();
     state.comicPages = data.pages;
 
-    // Restore progress
+    // Restore progress (a global plate index)
     let startPage = 0;
     const prog = state.currentBook.progress;
     if (prog && prog.current_location) {
       startPage = parseInt(prog.current_location) || 0;
     }
-    state.comicCurrentPage = startPage;
-    showComicPage();
+
+    // Manhua/webtoon = tall plates -> read as ONE vertical scroll, by chapter,
+    // with no left/right page-flip. Normal comics keep the paged single-plate view.
+    state.comicContinuous = await comicDetectWebtoon(bookId);
+    if (state.comicContinuous) {
+      openComicContinuous(startPage);
+    } else {
+      container.classList.remove('continuous');
+      document.getElementById('comic-chapter-controls').style.display = 'none';
+      state.comicCurrentPage = startPage;
+      showComicPage();
+    }
     // Save immediately so book appears in Continue Reading
     saveCurrentProgress();
   } catch(e) {
@@ -2695,9 +2764,12 @@ function comicZoomReset() { comicZoomApply(100, true); }
 // Ctrl + mouse wheel zooms the plate, like an image viewer.
 (function () {
   const c = document.getElementById('comic-container');
-  if (c) c.addEventListener('wheel', function (e) {
-    if (e.ctrlKey) { e.preventDefault(); comicZoom(e.deltaY < 0 ? 1 : -1); }
-  }, { passive: false });
+  if (c) {
+    c.addEventListener('wheel', function (e) {
+      if (e.ctrlKey) { e.preventDefault(); comicZoom(e.deltaY < 0 ? 1 : -1); }
+    }, { passive: false });
+    c.addEventListener('scroll', comicOnScroll, { passive: true });
+  }
 })();
 
 function showComicPage() {
@@ -2706,9 +2778,130 @@ function showComicPage() {
   const total = state.comicPages.length;
   const img = document.getElementById('comic-img');
   img.src = `/api/books/${bookId}/comic-page/${page}`;
-  document.getElementById('comic-page-info').textContent = `${page + 1} / ${total}`;
+  const inp = document.getElementById('comic-page-input');
+  inp.value = page + 1;                 // keep the editable field in sync with the shown page
+  inp.max = total;
+  document.getElementById('comic-page-total').textContent = ` / ${total}`;
   const pct = Math.round(((page + 1) / total) * 100);
   updateProgress(pct, String(page));
+}
+
+// Jump to the plate typed in the indicator (Enter or the ↵ button). Clamps to
+// 1..total. In continuous mode it SCROLLS to the plate (no page-flip); in paged
+// mode it flips to that page.
+function comicJumpToInput() {
+  const total = (state.comicPages && state.comicPages.length) || 0;
+  if (!total) return;
+  let n = parseInt(document.getElementById('comic-page-input').value, 10);
+  if (isNaN(n)) { if (!state.comicContinuous) showComicPage(); return; }
+  n = Math.max(1, Math.min(total, n));
+  if (state.comicContinuous) {
+    const plate = n - 1;
+    comicRenderChapter(comicChapterOfPlate(plate), plate);
+  } else {
+    state.comicCurrentPage = n - 1;
+    showComicPage();
+  }
+}
+
+// ── Continuous (webtoon) comic reader ────────────────────────
+// Tall-plate content reads as one vertical scroll per chapter, with chapter
+// navigation and NO page-flip. Chapters are derived from the plate filenames
+// (5-digit prefix / 10 = chapter number, e.g. 01725_003.jpg -> chapter 172.5).
+function comicDetectWebtoon(bookId) {
+  return new Promise(resolve => {
+    if (!state.comicPages || !state.comicPages.length) return resolve(false);
+    const img = new Image();
+    img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight / img.naturalWidth > 2);
+    img.onerror = () => resolve(false);
+    img.src = `/api/books/${bookId}/comic-page/0`;
+  });
+}
+
+function comicBuildChapters(pages) {
+  const chaps = [];
+  let cur = null;
+  pages.forEach((name, i) => {
+    const m = /^(\d+)_/.exec(name);
+    const key = m ? m[1] : '__';
+    if (!cur || cur.key !== key) {
+      cur = { key, num: m ? (parseInt(m[1], 10) / 10) : (chaps.length + 1), idxs: [] };
+      chaps.push(cur);
+    }
+    cur.idxs.push(i);
+  });
+  return chaps;
+}
+
+function comicChapterOfPlate(plateIdx) {
+  const chaps = state.comicChapters || [];
+  for (let i = 0; i < chaps.length; i++) {
+    const idxs = chaps[i].idxs;
+    if (plateIdx >= idxs[0] && plateIdx <= idxs[idxs.length - 1]) return i;
+  }
+  return 0;
+}
+
+function openComicContinuous(startPlate) {
+  const container = document.getElementById('comic-container');
+  container.classList.add('continuous');
+  state.comicChapters = comicBuildChapters(state.comicPages);
+  const sel = document.getElementById('comic-chapter-select');
+  sel.innerHTML = state.comicChapters.map((c, i) => `<option value="${i}">Ch. ${c.num}</option>`).join('');
+  document.getElementById('comic-chapter-controls').style.display = 'flex';
+  const chIdx = comicChapterOfPlate(startPlate || 0);
+  comicRenderChapter(chIdx, startPlate || 0);
+}
+
+function comicRenderChapter(chIdx, scrollToPlate) {
+  const chaps = state.comicChapters;
+  chIdx = Math.max(0, Math.min(chaps.length - 1, chIdx));
+  state.comicChapterIdx = chIdx;
+  const chap = chaps[chIdx];
+  const bookId = state.currentBook.id;
+  const scroll = document.getElementById('comic-scroll');
+  let html = chap.idxs.map(i => `<img data-idx="${i}" src="/api/books/${bookId}/comic-page/${i}" alt="">`).join('');
+  html += (chIdx < chaps.length - 1)
+    ? `<button class="next-chapter-btn" onclick="comicChapterStep(1)">Chapitre suivant ›</button>`
+    : `<div class="end-of-manhua">— Fin —</div>`;
+  scroll.innerHTML = html;
+  document.getElementById('comic-chapter-select').value = String(chIdx);
+  const container = document.getElementById('comic-container');
+  container.scrollTop = 0;
+  const startIdx = (scrollToPlate != null) ? scrollToPlate : chap.idxs[0];
+  comicUpdateIndicator(startIdx);
+  updateProgress(Math.round(((startIdx + 1) / state.comicPages.length) * 100), String(startIdx));
+  if (scrollToPlate != null && scrollToPlate !== chap.idxs[0]) {
+    const el = scroll.querySelector(`img[data-idx="${scrollToPlate}"]`);
+    if (el) { el.scrollIntoView({ block: 'start' }); setTimeout(() => el.scrollIntoView({ block: 'start' }), 400); }
+  }
+}
+
+function comicGoToChapter(chIdx) { comicRenderChapter(chIdx, null); }
+function comicChapterStep(dir) { comicRenderChapter((state.comicChapterIdx || 0) + dir, null); }
+
+function comicUpdateIndicator(globalIdx) {
+  const inp = document.getElementById('comic-page-input');
+  if (inp) { inp.value = globalIdx + 1; inp.max = state.comicPages.length; }
+  const tot = document.getElementById('comic-page-total');
+  if (tot) tot.textContent = ` / ${state.comicPages.length}`;
+}
+
+// Track the topmost visible plate while scrolling -> update indicator + progress.
+let _comicScrollTimer = null;
+function comicOnScroll() {
+  if (!state.comicContinuous) return;
+  clearTimeout(_comicScrollTimer);
+  _comicScrollTimer = setTimeout(() => {
+    const topbarBottom = document.querySelector('.reader-topbar').getBoundingClientRect().bottom;
+    const imgs = document.querySelectorAll('#comic-scroll img[data-idx]');
+    let cur = null;
+    for (const im of imgs) { if (im.getBoundingClientRect().bottom > topbarBottom + 4) { cur = im; break; } }
+    if (!cur) return;
+    const idx = parseInt(cur.dataset.idx, 10);
+    comicUpdateIndicator(idx);
+    updateProgress(Math.round(((idx + 1) / state.comicPages.length) * 100), String(idx));
+  }, 150);
 }
 
 function comicPrev() {
@@ -2768,13 +2961,21 @@ function handleReaderKeys(e) {
     return;
   }
   if (!document.getElementById('reader-view').classList.contains('active')) return;
+  // Don't hijack keys while typing in a field (e.g. the page-jump input).
+  if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
   const fmt = state.currentBook?.format;
   if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
     if (fmt === 'epub') epubPrev();
-    else if (fmt === 'cbr' || fmt === 'cbz') comicPrev();
+    else if (fmt === 'cbr' || fmt === 'cbz') {
+      if (!state.comicContinuous) comicPrev();
+      else if (e.key === 'ArrowLeft') comicChapterStep(-1);  // continuous: Up = native scroll
+    }
   } else if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
     if (fmt === 'epub') epubNext();
-    else if (fmt === 'cbr' || fmt === 'cbz') comicNext();
+    else if (fmt === 'cbr' || fmt === 'cbz') {
+      if (!state.comicContinuous) comicNext();
+      else if (e.key === 'ArrowRight') comicChapterStep(1);   // continuous: Down = native scroll
+    }
   } else if (fmt === 'cbr' || fmt === 'cbz') {
     if (e.key === '+' || e.key === '=') { comicZoom(1); e.preventDefault(); }
     else if (e.key === '-' || e.key === '_') { comicZoom(-1); e.preventDefault(); }
