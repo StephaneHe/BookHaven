@@ -16,11 +16,23 @@
       chapitres multi-pages ET strips webp s'affichent dans l'ordre.
 - [x] Fix MIME WebP pour `/comic-page` (bump 2.5.1) — **redémarrer Flask** pour l'appliquer.
 
+- [x] **Lecture en un seul livre continu** (demande utilisateur) : 217 chapitres
+      combinés en **1 CBZ / 1045 pages** (`combine_manhua_cbz.py` +
+      `finalize_manhua_single.py`), enregistré comme un seul comic. Vérifié sur le
+      web live : reader « Sir, Don't Show Off » 1/1045, défilement continu.
+- [x] Serveur Flask redémarré → correctif MIME WebP appliqué (page webp servie
+      `image/webp`), base débloquée.
+
 ### Suivi possible (non bloquant)
+- [ ] **Bug latent à corriger** : des handlers Flask ne ferment pas toujours la
+      connexion SQLite sur le chemin d'erreur → une transaction d'écriture peut
+      rester ouverte et **verrouiller toute la base** (constaté : `api_set_progress`
+      « database is locked » en boucle, corrigé par un redémarrage). Envelopper
+      l'accès DB dans un `try/finally: conn.close()` (ou un context manager).
 - [ ] Vérifier le rendu d'un strip webp très haut (~14000 px) sur l'app Android
       (Coil peut sous-échantillonner les très grandes images). Web = OK.
-- [ ] Relance : `python scripts/fetch_manhua.py <chapitres>` puis `pack_` + `import_`
-      si de nouveaux chapitres sortent (les scripts sont idempotents/reprenables).
+- [ ] Si de nouveaux chapitres sortent : `fetch_manhua.py <ch>` puis
+      `combine_manhua_cbz.py` + `finalize_manhua_single.py` (idempotents).
 
 
 

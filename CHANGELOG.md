@@ -23,6 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   page multi-`.jpg` ou strip `_stitched.webp`), packaging en **CBZ par chapitre**
   et enregistrement dans la bibliothèque (série + `series_index` exact, y compris
   chapitres décimaux). Les images restent hors du dépôt (sous `data/`, ignoré).
+- **Lecture en un seul livre continu** (`scripts/combine_manhua_cbz.py`,
+  `finalize_manhua_single.py`) : les 1045 pages des 217 chapitres sont combinées
+  dans **un unique CBZ** (noms triables `<ch*10:05d>_<page:03d>`, donc 172.5
+  entre 172 et 173) puis enregistrées comme **un seul comic** de 1045 pages — les
+  chapitres s'enchaînent sans interruption au lieu de 217 entrées séparées.
+
+### Note
+- Le serveur Flask live a été redémarré (procédure watchdog documentée) pour
+  appliquer le correctif MIME WebP et débloquer la base : une connexion serveur
+  avait laissé une transaction d'écriture ouverte (bug latent de fermeture de
+  connexion sur chemin d'erreur — cf. TODO), ce qui verrouillait la DB (les
+  sauvegardes de progression échouaient aussi). Backups DB créés avant chaque
+  modification.
 
 ## [2.5.0] - 2026-08-28
 
