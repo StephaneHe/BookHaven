@@ -1,14 +1,15 @@
 # BookHaven — TODO
 
-## 2026-09-18 — Audit intégrité manhua « Sir, Don't Show Off » (web 2.7.3)
+## 2026-09-18 — Réparation manhua « Sir, Don't Show Off » (web 2.7.4)
 
-- [x] Scan intégrité 217 ch / 1045 img : **0 image de contenu tronquée**. Les 74
-      « bad-end-marker » = un GIF pub 728×90 unique (déjà filtré du CBZ), retiré des
-      données. CBZ régénéré (969 pages, contenu identique), sauvegardes conservées.
-- [ ] **À décider (utilisateur)** : ~42 chapitres (dont le ch50) sont tronqués **à la
-      source** par roliascan (planche unique coupée à gabarit fixe, identique au CDN,
-      sans page_002). **Irrécupérable depuis roliascan.** Envisager un miroir alternatif
-      (hors périmètre autorisé). Détail : `docs/manhua-integrity-report-2026-09-18.md`.
+- [x] **Strips manquants récupérés.** Correction du diagnostic 2.7.3 (« tronqué à la
+      source » = FAUX). Chaque chapitre stitched = plusieurs strips `page_001/016/031/046…`
+      (pas de 15) ; l'ancien fetcher ne gardait que le strip 1. `fetch_manhua_strips.py` :
+      **+294 strips, 109 chapitres réparés**, 17 genuinement courts, **0 image corrompue**
+      (1265 img). CBZ **969→1263 pages** régénéré, DB à jour, backups gardés. ch50 complet
+      (4 strips) enchaîne ch51. Détail : `docs/manhua-integrity-report-2026-09-18.md`,
+      progression : `docs/manhua-repair-progress.md`.
+- [x] Nettoyage pub (2.7.3) : 74 GIF 728×90 identiques retirés des données (déjà exclus du CBZ).
 
 ## 2026-09-18 — Refonte P0 (Opus 4.8) — voir docs/bookhaven-refonte-progress.md
 

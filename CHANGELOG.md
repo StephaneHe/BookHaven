@@ -5,6 +5,26 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.4] - 2026-09-18
+
+### Fixed
+- **Manhua « Sir, Don't Show Off » : strips manquants récupérés (correction du
+  diagnostic 2.7.3).** Le 2.7.3 concluait à tort « ch50 tronqué à la source ».
+  En réalité, chaque chapitre *stitched* de roliascan est servi en **plusieurs
+  strips hauts** numérotés `page_001/016/031/046…` **par pas de 15** (15 pages
+  sources par strip). L'ancien `fetch_manhua.py` s'arrêtait au 1ᵉʳ 404
+  (`page_002`) et ne gardait que le **strip 1** de chaque chapitre stitched.
+  Nouveau `scripts/fetch_manhua_strips.py` (pas de 15 jusqu'au 404 réel, retries,
+  reprise) : **+294 strips récupérés**, **109 chapitres réparés**, 17 chapitres
+  genuinement courts (≤15 pages, `page_016` = 404 réel). Intégrité : **1265
+  images, 0 corrompue**. Mapping confirmé (og:image) : chapitre N → dossier `_N`,
+  aucun décalage. CBZ régénéré **969 → 1263 pages** (1362,9 Mo, pubs filtrées),
+  backups conservés. ch50 = 4 strips, enchaîne correctement sur ch51.
+
+### Changed
+- **`__version__` 2.7.3 → 2.7.4.** ⚠️ **Redémarrage Flask requis** (reflet version ;
+  le CBZ/DB sont lus à chaud, aucun autre changement de code serveur).
+
 ## [2.7.3] - 2026-09-18
 
 ### Fixed
