@@ -5,6 +5,26 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.9] - 2026-09-19
+
+### Added
+- **Catégorie « Webcomics »** (rayon pour manhua/manhwa/webtoons). Les catégories
+  sont des valeurs libres de `books.category` (exposées par `/api/filters`, chips
+  web + Android dynamiques) — pas de schéma ni d'UI à changer. « Sir, Don't Show
+  Off » (id 39572) déplacé de `Comics` → `Webcomics` (les 6587 autres comics
+  restent dans `Comics`). Backup DB avant modif.
+
+### Changed
+- **Couverture du manhua** remplacée par l'**affiche officielle roliascan**
+  (`content/media/manga-319969-cover-…jpg`, og:image/`data-manga-cover` de la page
+  série) au lieu de la 1ʳᵉ planche. Écrite dans le cache de covers (ancienne
+  sauvegardée `.prewebcomics.bak`), `modified_at` bumpé (`content_version` MàJ).
+- **En-tête cache des couvertures** : `Cache-Control: no-cache` (revalidation
+  ETag/Last-Modified) au lieu de `max-age=86400`, pour que le web **et** l'app
+  (OkHttp/Coil) reprennent une couverture modifiée sans attendre 24 h.
+- **`__version__` 2.7.8 → 2.7.9.** ⚠️ **Redémarrage Flask requis.** Aucun changement
+  Android (catégorie/couverture pris via endpoints existants).
+
 ## [2.7.8] - 2026-09-19
 
 ### Fixed

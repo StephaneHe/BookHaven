@@ -1,5 +1,14 @@
 # BookHaven — TODO
 
+## 2026-09-19 — Catégorie Webcomics + couverture manhua (web 2.7.9)
+
+- [x] Catégorie **Webcomics** (valeur libre `books.category`, chips web+Android
+      dynamiques via `/api/filters`) ; « Sir, Don't Show Off » (39572) déplacé
+      Comics→Webcomics. Couverture = affiche officielle roliascan (og:image), écrite
+      dans le cache covers (ancienne .bak), `content_version` MàJ. Cover endpoint
+      `Cache-Control: no-cache` (revalidation → web+app reprennent la nouvelle cover).
+      Backup DB fait. Aucun changement Android. Vérifié live (filters, category, cover).
+
 ## 2026-09-19 — Fix bug énumération strips manhua (web 2.7.8)
 
 - [x] Cause = pas fixe (15) FAUX (pas variable 14/15/16 ; ch57 046→062, ch99 →015).

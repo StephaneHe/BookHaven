@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.7.8"
+__version__ = "2.7.9"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -1371,7 +1371,10 @@ def api_book_cover(book_id):
             cover_path = scanner.get_cover_path(book["path"])
             if cover_path and os.path.exists(cover_path):
                 resp = send_file(cover_path, mimetype="image/jpeg")
-                resp.headers["Cache-Control"] = "public, max-age=86400"
+                # Revalidate (ETag/Last-Modified) instead of caching a day, so a
+                # changed cover (e.g. a better one) is picked up promptly by the web
+                # and the app (OkHttp/Coil) rather than showing the stale image.
+                resp.headers["Cache-Control"] = "no-cache"
                 return resp
 
         # Return inline placeholder SVG (short cache so it refreshes when cover is extracted)
