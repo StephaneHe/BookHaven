@@ -1,5 +1,16 @@
 # BookHaven — TODO
 
+## 2026-09-19 — Fix bug énumération strips manhua (web 2.7.8)
+
+- [x] Cause = pas fixe (15) FAUX (pas variable 14/15/16 ; ch57 046→062, ch99 →015).
+      Corrigé : endpoint autoritatif `/auth/chapter-content?chapter_id=<postid>` (liste
+      exacte) dans `fetch_manhua_strips.py` + `download_roliascan.py` ; règles + skill
+      MàJ (pas variable documenté). Re-vérif 217 : **25 chapitres complétés (+57 strips,
+      1322 img, 0 défaut)** ; ch57 = 5 strips complet. CBZ 1263→1320, content_version MàJ.
+      Détail `docs/manhua-recheck2-progress.md`.
+- [ ] **Manuel** : recopier `docs/roliascan-manhua-SKILL.corrected.md` dans
+      `.claude/skills/roliascan-manhua/SKILL.md` (écriture `.claude/` bloquée en session).
+
 ## 2026-09-19 — Re-vérif intégrité manhua (ch57) (web 2.7.7)
 
 - [x] Re-scan exhaustif 217 ch vs CDN (enumerator durci : fin = 2×404 → détecte les

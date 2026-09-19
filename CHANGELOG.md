@@ -5,6 +5,27 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.8] - 2026-09-19
+
+### Fixed
+- **Bug d'énumération des strips manhua corrigé — 25 chapitres complétés (+57
+  strips).** Le « pas de 15 » était FAUX : les strips sont indexés par 1ʳᵉ page
+  source mais le **PAS VARIE** (ch57 = 001/016/031/046/**062** = +16 ; ch99 =
+  001/**015**/029/043 = +14). L'énumération par grille sautait des strips →
+  chapitres incomplets (ch50/ch57/ch99…). **Correction** : `fetch_manhua_strips.py`
+  et `download_roliascan.py` utilisent désormais l'endpoint **autoritatif** du
+  lecteur `GET /auth/chapter-content?chapter_id=<postid>` (liste EXACTE des URLs) —
+  plus aucune supposition de pas. Re-vérif des 217 : 1265 → **1322 images**, 0
+  défectueuse ; **ch57 complet** (5 strips), s'enchaîne sur ch58. CBZ régénéré
+  **1263 → 1320 pages**, `content_version` MàJ (l'app invalide son cache). Règles
+  (`docs/roliascan-download-rules.md`) et skill mis à jour (SKILL.md : copie
+  corrigée `docs/roliascan-manhua-SKILL.corrected.md`, écriture `.claude/` bloquée).
+  Détail : `docs/manhua-recheck2-progress.md`.
+
+### Changed
+- **`__version__` 2.7.7 → 2.7.8.** ⚠️ **Redémarrage Flask requis** (reflet version ;
+  la MàJ `content_version` du manhua est déjà en base).
+
 ## [2.7.7] - 2026-09-19
 
 ### Fixed

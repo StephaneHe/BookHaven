@@ -217,80 +217,64 @@ def save_bytes(path, data):
     os.replace(tmp, path)
 
 
-# ----------------------- per-chapter enumeration ----------------------------
+# ----------------------- per-chapter (AUTHORITATIVE) ------------------------
+# The exact ordered page list comes from the reader's own endpoint. NEVER guess a
+# page-index step: strips are numbered by first source-page index but the STEP
+# VARIES (ch57 = 001/016/031/046/062 = +16 at the end; ch99 = 001/015/029/043 = +14).
+# A fixed-step grid silently skips real strips -> incomplete chapters.
+CONTENT_URL = "https://roliascan.com/auth/chapter-content?chapter_id={pid}"
 
-def detect_scheme(chdir, mid, key, plan):
-    """Return (suffix, ext) for page_001, from disk or by probing the CDN."""
-    for fn in sorted(os.listdir(chdir)) if os.path.isdir(chdir) else []:
-        m = re.match(r"page_0*1(_stitched)?\.(jpg|jpeg|webp|png)$", fn)
-        if m:
-            return ("_stitched" if m.group(1) else ""), m.group(2)
-    for suffix, ext in CANDIDATES:
-        _d, st = http_bytes(CDN.format(mid=mid, key=key, fn=f"page_001{suffix}.{ext}"))
-        if st == "ok":
-            return suffix, ext
-        time.sleep(0.15)
+
+def chapter_images(postid):
+    """Authoritative ordered image URLs for a chapter, or None on failure."""
+    for a in range(RETRIES):
+        try:
+            req = urllib.request.Request(CONTENT_URL.format(pid=postid), headers={
+                "User-Agent": UA, "Referer": SITE + "/",
+                "X-Requested-With": "XMLHttpRequest", "Accept": "application/json"})
+            j = json.loads(urllib.request.urlopen(req, timeout=45).read().decode("utf-8", "replace"))
+            if j.get("success") and isinstance(j.get("images"), list):
+                return j["images"]
+            return []
+        except Exception:
+            time.sleep(1.0 * (a + 1) + random.random())
     return None
 
 
-def process_chapter(mid, key, chdir, plan):
+def process_chapter(postid, chdir, plan):
     os.makedirs(chdir, exist_ok=True)
-    scheme = detect_scheme(chdir, mid, key, plan)
-    if not scheme:
-        flag("no-images", f"folder _{key}: no page_001 found (chapter missing at source?)")
-        return {"key": key, "regime": "missing", "expected": [], "downloaded": [],
-                "present": [], "end_404": None}
-    suffix, ext = scheme
-    stitched = (suffix == "_stitched")
-    regime = "stitched" if stitched else "paged"
-    step = STRIP_STEP if stitched else 1
+    imgs = chapter_images(postid)
+    if imgs is None:
+        flag("fetch-failed", f"chapter {postid}: chapter-content unreachable after retries")
+        return {"postid": postid, "images_total": None, "present": [], "downloaded": [], "ads": [], "missing": []}
+    if not imgs:
+        flag("empty-chapter", f"chapter {postid}: no images (locked/premium at source?)")
+        return {"postid": postid, "images_total": 0, "present": [], "downloaded": [], "ads": [], "missing": []}
 
-    expected, present, downloaded, bad = [], [], [], []
-    end_404 = None
-    idx, misses = 1, 0
-    while idx <= 400:
-        fn = f"page_{idx:03d}{suffix}.{ext}"
+    present, downloaded, ads, missing = [], [], [], []
+    for url in imgs:
+        fn = url.rsplit("/", 1)[-1].split("?")[0]
         dest = os.path.join(chdir, fn)
         if local_has_valid(dest):
-            present.append(idx); expected.append(idx); misses = 0; idx += step; continue
+            present.append(fn); continue
         if plan:
-            _d, st = http_bytes(CDN.format(mid=mid, key=key, fn=fn))
-            if st == "ok":
-                expected.append(idx); misses = 0
-            elif st == "404":
-                end_404 = end_404 or idx
-                misses += 1
-                if (stitched and misses >= 1) or misses >= PAGED_END_AFTER_MISSES:
-                    break
-            idx += step; time.sleep(PAGE_DELAY); continue
-        data, st = http_bytes(CDN.format(mid=mid, key=key, fn=fn))
-        if st == "ok" and data and is_ad_gif(data):
-            break                                  # trailing ad banner => end of content
-        if st == "ok" and data:
-            expected.append(idx)
-            if valid_image_bytes(dest, data):
-                save_bytes(dest, data); downloaded.append(idx)
-            else:
-                bad.append(idx)
-                flag("truncated", f"_{key}/{fn} downloaded but failed integrity")
-            misses = 0
-        elif st == "404":
-            end_404 = end_404 or idx
-            misses += 1
-            if (stitched and misses >= 1) or misses >= PAGED_END_AFTER_MISSES:
-                break
+            _d, st = http_bytes(url, referer=CDN_REFERER)   # existence only, no save
+            (present if st == "ok" else missing).append(fn)
+            time.sleep(PAGE_DELAY); continue
+        data, st = http_bytes(url, referer=CDN_REFERER)
+        if data and is_ad_gif(data):
+            ads.append(fn); time.sleep(PAGE_DELAY); continue
+        if data and valid_image_bytes(dest, data):
+            save_bytes(dest, data); downloaded.append(fn)
         else:
-            bad.append(idx)
-            flag("transient", f"_{key}/{fn} transient error after {RETRIES} retries")
-        idx += step
+            missing.append(fn)
+            flag("missing-strip", f"chapter {postid}: {fn} could not be fetched/validated ({st})")
         time.sleep(PAGE_DELAY)
 
-    if stitched and len(expected) == 1:
-        flag("short-chapter", f"_{key}: single strip only (<=15 pages) — verify it is genuinely short")
-    log(f"ch _{key:>6} [{regime:>8}]: strips={len(expected)} "
-        f"present={len(present)} +dl={len(downloaded)} end404=page_{end_404} bad={bad}")
-    return {"key": key, "regime": regime, "expected": expected, "present": present,
-            "downloaded": downloaded, "bad": bad, "end_404": end_404}
+    log(f"ch {postid}: images={len(imgs)} present={len(present)} +dl={len(downloaded)} "
+        f"ads={len(ads)} missing={missing}")
+    return {"postid": postid, "images_total": len(imgs), "present": present,
+            "downloaded": downloaded, "ads": ads, "missing": missing}
 
 
 # ------------------------------- combine ------------------------------------
@@ -406,14 +390,15 @@ def main():
 
     results = []
     for num, pid in chapters:
-        folder = num if mode == "identity" else (og_folder(disc["read_slug"], f"ch{num}-{pid}") or num)
         localdir = f"{int(float(num)):03d}" if "." not in num else \
             f"{int(float(num.split('.')[0])):03d}.{num.split('.')[1]}"
         chdir = os.path.join(out_root, localdir)
         if args.no_download and not args.plan:
             continue
-        r = process_chapter(mid, folder, chdir, plan=args.plan)
-        r.update({"chapter": num, "folder": folder, "localdir": localdir})
+        # Authoritative: the exact page URLs come from chapter-content (postid);
+        # no page-index guessing / step assumption.
+        r = process_chapter(pid, chdir, plan=args.plan)
+        r.update({"chapter": num, "localdir": localdir})
         results.append(r)
 
     json.dump({"series": slug, "manga_id": mid, "title": title, "mode": mode,

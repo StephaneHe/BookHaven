@@ -1,95 +1,92 @@
 # Règles de téléchargement roliascan → BookHaven
 
-Consignées à partir du download initial **et** de la réparation de « Sir, Don't
-Show Off » (voir `docs/manhua-integrity-report-2026-09-18.md`,
-`docs/manhua-repair-progress.md`). Implémentées dans
-`scripts/download_roliascan.py` ; exposées comme skill dans
+Consignées à partir du download initial **et** des réparations de « Sir, Don't
+Show Off ». Implémentées dans `scripts/fetch_manhua_strips.py` (série connue) et
+`scripts/download_roliascan.py` (n'importe quelle série). Skill :
 `.claude/skills/roliascan-manhua/SKILL.md`.
 
-## 1. Source autoritative : le CDN `.org`, pas le HTML `.com`
+## 0. RÈGLE CENTRALE — liste des planches = endpoint autoritatif (PAS de devinette)
 
-- Les images vivent sur :
-  `https://roliascan.org/storage/chapters/manhwa_<MANGA_ID>_<CHAP_NUM>/page_<NNN>[_stitched].<ext>`
-- **NE PAS** se fier à la page HTML du chapitre sur `roliascan.com` : elle
-  sous-liste les images (og:image / JSON-LD ne montrent souvent que la **1ʳᵉ**
-  planche). C'est l'erreur qui avait fait conclure à tort « ch50 tronqué à la
-  source ». Le CDN `.org/storage/chapters/` fait autorité.
-- En-têtes obligatoires : **User-Agent navigateur** + **`Referer: https://roliascan.org/`**
-  (sans ça le CDN peut bloquer).
+roliascan (thème « mangapeak », back Laravel) expose la liste EXACTE et ordonnée
+des planches d'un chapitre :
 
-## 2. Numérotation des planches — « strips stitched », PAS DE 15
+```
+GET https://roliascan.com/auth/chapter-content?chapter_id=<POSTID>
+-> {"success":true,"chapter_type":"media","images":[<URLs CDN ordonnées>],"total":N}
+```
 
-- Un chapitre est servi en **un ou plusieurs strips hauts** numérotés par leur
-  **première page source** : `page_001_stitched.webp` (pages 1–15),
-  `page_016_stitched.webp` (16–30), `page_031` (31–45), `page_046` … → **pas de 15**.
-- **Énumérer jusqu'au 404 RÉEL.** Un 404 doit être confirmé par **retries**
-  (l'ancien `fetch_manhua.py` s'arrêtait au 1ᵉʳ 404 `page_002` et ne gardait que le
-  strip 1 → ~109 chapitres coupés). Ne jamais conclure « fin » sur une erreur
-  transitoire.
-- Chapitres courts/anciens : parfois en **pages contiguës** (`page_001.jpg`,
-  `page_002.jpg`, … pas de 1). Détecter le schéma par sondage de `page_001`.
-- Formats **mixtes** possibles : JPEG ou WebP, `_stitched` ou non, selon l'âge.
+`<POSTID>` = l'id dans le slug `chN-<postid>` (ex. ch57 → 320165). On télécharge
+**exactement ces URLs** (stitched OU pages jpg, dans l'ordre). Pas d'auth requise.
 
-## 3. Découverte des chapitres & mapping chapitre→dossier CDN
+⛔ **NE JAMAIS supposer un PAS de numérotation des strips.** Les strips sont
+numérotés par **index de 1ʳᵉ page source**, mais le **PAS VARIE** (14, 15, 16, …) :
+- **ch57** = `page_001/016/031/046/062` → 46→62 = **+16**
+- **ch99** = `page_001/015/029/043` → **+14**
 
-- Page série : `https://roliascan.com/series/<slug>/`. Elle contient :
-  - `manga_id` via `data-manga-id="<id>"` (ou `manhwa_<id>_` dans les URLs),
-  - le **read-slug** via les liens `/read/<read-slug>/ch…/` (différent du slug
-    série : `sir-dont-show-off` vs `sir-don-t-show-off`),
-  - **tous** les slugs de chapitres `ch<num>-<postid>` (num éventuellement décimal).
-- **Dossier CDN** confirmé via l'**og:image** d'un échantillon de chapitres.
-  Observé sur ce titre : **chapitre affiché N → dossier `_N`** (aucun décalage).
-  Vérifier ; si décalage, résoudre **chaque** chapitre par son og:image.
+Une ancienne version énumérait « pas de 15 jusqu'au 404 » : elle sondait `page_016`
+(404) pour ch99 et concluait « 1 seul strip, chapitre court » — **FAUX** (4 strips) ;
+et pour ch57 elle sautait de `page_061`(404) à `page_076`(404) sans jamais tester
+`page_062`, tronquant le chapitre. **C'est la cause des chapitres incomplets
+(ch50, ch57, ch99, …).** Corrigé : on lit la liste autoritative, aucune grille.
 
-## 4. Filtrage des publicités
+## 1. Hôtes & en-têtes
 
-- Bannière récurrente **728×90** injectée en fin de chapitre sous **fausse
-  extension `.jpg`** (en réalité un GIF animé, md5 `ed6d7bf6aa`, ~85 633 o,
-  « BEST WEBSITE TO WATCH… »), plus filigranes fins **LIKEMANGA.IO / WEBNOVEL**.
-- `manhua_adfilter.py` : rejette les tailles IAB connues (728×90, 970×250, …) et
-  les bandes **larges & courtes** (ratio ≥ 3, hauteur ≤ 120 px). Au download, le
-  GIF est reconnu par signature/hash et traité comme **fin de contenu**.
-- Ces pubs sont **exclues du CBZ** (jamais montrées au lecteur).
+- **chapter-content** : sur `roliascan.com`, Referer `https://roliascan.com/`.
+- **Images** : sur `roliascan.org/storage/chapters/manhwa_<id>_N/…`, Referer
+  **`https://roliascan.org/`** (sinon blocage CDN).
+- UA navigateur, retries/backoff, reprise (skip des fichiers déjà valides), délais.
 
-## 5. Robustesse
+## 2. Découverte de la série (pour une nouvelle série)
 
-- Retries + backoff, **reprise** (skip des planches déjà valides sur disque),
-  concurrence limitée, délais polis (**site lent/instable**), timeouts.
-- Idempotent : relancer ne re-télécharge que le manquant.
+Page série `https://roliascan.com/series/<slug>/` : `manga_id` via
+`data-manga-id`, read-slug via les liens `/read/…`, et **tous** les slugs
+`ch<num>-<postid>` (num éventuellement décimal). Le mapping chapitre→dossier CDN
+`_N` est confirmé par og:image, mais **inutile pour le download** puisque les URLs
+viennent de l'endpoint.
 
-## 6. Intégrité
+## 3. Filtrage des publicités
 
-- Chaque image doit **décoder** (PIL, `LOAD_TRUNCATED_IMAGES=False`) **et** avoir
-  un **marqueur de fin** valide : JPEG `FF D9`, PNG `IEND`, WebP taille RIFF
-  cohérente. Les tronquées sont re-téléchargées ou signalées.
-- Contrôle : `python scripts/check_manhua_integrity.py <slug>` → `bad_images=0`.
+Bannière **728×90** injectée en fin de chapitre sous **fausse extension `.jpg`**
+(GIF animé, md5 `ed6d7bf6aa`, ~85 633 o). L'endpoint la liste parfois dans
+`images` : la reconnaître par hash/format et **ne jamais l'enregistrer** (ni la
+compter comme contenu). Exclue du CBZ par `manhua_adfilter.py`.
 
-## 7. Intégration BookHaven
+## 4. Intégrité
 
-- **Un seul CBZ continu** : toutes les planches, renommées de façon triable
-  `NNNNN_NNN.<ext>` avec `NNNNN = chapitre × 10` (décimaux préservés : `172.5`
-  → préfixe `01725`). Le lecteur **web continu (v2.7.0)** dérive les chapitres du
-  préfixe des planches (préfixe/10 = numéro), lecture **verticale continue**.
-- Pubs filtrées à la construction du CBZ.
-- Enregistré comme **un seul livre** (INSERT idempotent, `genre='Comics'` pour que
-  le scan complet le préserve). **Backup** du CBZ avant remplacement (`.orig`).
-- ⚠️ **NE JAMAIS** rejouer `finalize_manhua_single.py` : il **DELETE** les lignes
-  de la série et peut casser des IDs / progressions de lecture. Le
-  `download_roliascan.py` fait un enregistrement **non destructif**.
+Chaque image doit **décoder** (PIL, `LOAD_TRUNCATED_IMAGES=False`) **et** avoir un
+**marqueur de fin** valide : JPEG `FF D9`, PNG `IEND`, WebP taille RIFF cohérente.
+Contrôle : `python scripts/check_manhua_integrity.py <slug>` → `bad_images=0`.
+
+## 5. Intégration BookHaven
+
+- **Un seul CBZ continu** : planches renommées `NNNNN_NNN.<ext>` avec
+  `NNNNN = chapitre × 10` (décimaux préservés : `172.5` → `01725`). Lecteur web
+  continu (v2.7.0) : chapitres dérivés du préfixe (préfixe/10). Pubs filtrées.
+- Enregistré comme **un seul livre** (INSERT idempotent). `content_version`
+  (`file_size:modified_at`) change à la régénération → l'app Android invalide son
+  cache et re-télécharge (lot 2.7.6 / android 1.9.0).
+- ⚠️ **NE JAMAIS** rejouer `finalize_manhua_single.py` (DELETE d'IDs / casse les
+  progressions). **Backup** du CBZ avant remplacement (`.orig` + `.bak`).
 - Flask 8097 : CBZ + DB lus **à chaud** → pas de redémarrage requis (sauf bump
   `__version__`).
 
-## 8. ⚠️ Exceptions à surveiller (le site n'est PAS régulier)
+## 6. ⚠️ Exceptions à surveiller (le site n'est PAS régulier)
 
-Le script écrit une section `anomalies` dans `data/manhua/<slug>/_download_report.json`.
-**Toujours la revoir** et **signaler pour revue humaine** au lieu de deviner :
+Section `anomalies` de `_strips_manifest.json` / `_download_report.json` — **signaler**
+plutôt que deviner :
 
 | Anomalie | Signal | Action |
 |---|---|---|
-| Chapitre tronqué/incomplet à la source | 404 réel là où on attend une planche | Le noter précisément ; ne pas inventer |
-| Numérotation irrégulière / trou | `short-chapter`, strip manquant au milieu | Vérifier chapitre court (≤15 p.) vs troncature |
-| Décalage d'indice chapitre↔dossier | `folder-offset` (og:image ≠ N) | Résolution par-chapitre via og:image |
-| Chapitre décimal (172.5) | `decimal-chapter` | Slug parfois `ch172-5-…` ; préserver l'ordre |
-| Changement domaine/CDN | 404 systématiques | Re-vérifier `.org` / chemin `/storage/chapters/` |
-| Variante de pub | nouvelle bannière/filigrane | Élargir `manhua_adfilter.py` |
+| **PAS variable** (14/15/16…) | — | TOUJOURS l'endpoint chapter-content, jamais une grille |
+| Chapitre verrouillé/vide | `empty-chapter` (`success:false`/`images:[]`) | Signaler (≠ chapitre court réel) |
+| Pub incluse dans la liste | GIF 728×90 md5 `ed6d7bf6aa` | Exclure, ne pas compter |
+| Strip introuvable | `missing-strip` | Re-tenter ; noter si persiste |
+| Formats mixtes | jpg vs webp `_stitched` | Géré (on suit l'URL) |
+| Chapitre décimal (172.5) | postid propre | Préserver l'ordre |
+| Changement domaine/endpoint | échecs `fetch-failed` | Re-vérifier `.org`/`.com`/`/auth/chapter-content` |
 | Instabilité / rate-limit | lenteur, 5xx, timeouts | Retries/backoff, reprise ; ne pas marteler |
+
+## Provenance
+
+`docs/manhua-recheck2-progress.md` (correction du bug d'énumération, 2026-09-19),
+`docs/manhua-integrity-report-2026-09-18.md`.
