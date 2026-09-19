@@ -41,7 +41,8 @@ class DownloadRepository @Inject constructor(
             val entity = DownloadedBook(
                 bookId = book.id, title = book.title, author = book.author,
                 format = book.format, localPath = file.absolutePath,
-                downloadedAt = System.currentTimeMillis(), fileSize = file.length()
+                downloadedAt = System.currentTimeMillis(), fileSize = file.length(),
+                contentVersion = book.contentVersion
             )
             downloadedBookDao.insert(entity)
             entity

@@ -1,5 +1,27 @@
 # Changelog — BookHaven Android
 
+## [1.8.0] - 2026-09-19
+
+### Fixed
+- **Le contenu comic/manhua mis à jour côté serveur n'était pas repris (cache
+  périmé).** L'app réutilisait le CBZ téléchargé et le cache de pages du lecteur
+  (P0-B) sans détecter que le contenu serveur avait changé (ex. « Sir, Don't Show
+  Off » réparé de 969 à 1263 pages). Désormais :
+  - Le cache disque de pages est **clé par empreinte de contenu**
+    (`b<id>_v<content_version>_p<n>.img`) ; à l'ouverture, les fichiers d'une
+    **version différente sont purgés** → re-fetch du contenu à jour. Robustesse
+    P0-B conservée (par références, pas d'OOM).
+  - **En ligne** : le lecteur lit `content_version` depuis `/comic-pages` et
+    l'utilise comme clé (une seule requête donne pages + version).
+  - **Hors-ligne** : la copie téléchargée mémorise sa `content_version` ; à
+    l'ouverture, si le serveur a une version différente, l'app **propose « Mettre
+    à jour »** (re-télécharge) au lieu d'afficher silencieusement du périmé
+    (migration Room 4→5 : colonne `contentVersion`).
+
+### Changed
+- versionCode 60, versionName 1.8.0. Nécessite le serveur **≥ 2.7.6** (champ
+  `content_version`).
+
 ## [1.7.0] - 2026-09-18
 
 ### Changed

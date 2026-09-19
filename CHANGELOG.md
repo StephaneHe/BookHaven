@@ -5,6 +5,16 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.6] - 2026-09-19
+
+### Added
+- **Empreinte de contenu (`content_version`) pour l'invalidation du cache client.**
+  `_content_version(file_size, modified_at)` — valeur stable qui change quand le
+  fichier d'un livre est régénéré (ex. CBZ manhua reconstruit avec plus de pages).
+  Exposée dans `GET /api/books/<id>/comic-pages`, `GET /api/books/<id>` (détail) et
+  chaque livre de `GET /api/books`. Permet à l'app Android de détecter un contenu
+  périmé et de ré-télécharger. ⚠️ **Redémarrage Flask requis.**
+
 ## [2.7.5] - 2026-09-18
 
 ### Added

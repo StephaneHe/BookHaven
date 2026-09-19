@@ -5,6 +5,8 @@ import android.util.Log
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import androidx.viewpager2.widget.ViewPager2
@@ -16,6 +18,7 @@ import com.bookhaven.android.ui.common.showError
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
@@ -65,8 +68,44 @@ class ComicReaderFragment : Fragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             // Read pages ON DEMAND: offline from the local CBZ (ZipFile random
             // access), online from the paged API. Never load the whole archive.
-            val local = localPath?.let { File(it) }?.takeIf { it.exists() }
-            val source = ComicPageSource(requireContext().applicationContext, bookId, api, local)
+            // Cache is keyed by the server content fingerprint so a rebuilt comic
+            // (e.g. manhua with more pages) is never served stale.
+            var local = localPath?.let { File(it) }?.takeIf { it.exists() }
+            var contentVersion = ""
+            var knownCount: Int? = null
+
+            if (local != null) {
+                // Offline copy present. If online, detect a stale copy and offer to update.
+                val stored = downloadRepo.getDownload(bookId)?.contentVersion ?: ""
+                contentVersion = stored
+                val fresh = withContext(Dispatchers.IO) { runCatching { api.getBookDetail(bookId) }.getOrNull() }
+                val serverVer = fresh?.contentVersion.orEmpty()
+                if (fresh != null && serverVer.isNotBlank() && serverVer != stored) {
+                    if (confirmUpdate()) {
+                        val redownloaded = withContext(Dispatchers.IO) {
+                            downloadRepo.deleteDownload(bookId)
+                            downloadRepo.downloadBook(fresh).getOrNull()
+                        }
+                        if (redownloaded != null) {
+                            local = File(redownloaded.localPath).takeIf { it.exists() }
+                            contentVersion = redownloaded.contentVersion
+                        } else {
+                            Toast.makeText(requireContext(), "Mise à jour échouée — version hors-ligne conservée", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        Toast.makeText(requireContext(), "Version hors-ligne (peut être périmée)", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } else {
+                // Online: one call gives both the page list and the content version.
+                val resp = withContext(Dispatchers.IO) { runCatching { api.getComicPages(bookId) }.getOrNull() }
+                contentVersion = resp?.contentVersion.orEmpty()
+                knownCount = resp?.pages?.size
+            }
+
+            val source = ComicPageSource(
+                requireContext().applicationContext, bookId, api, local, contentVersion, knownCount
+            )
 
             val count = withContext(Dispatchers.IO) {
                 runCatching { source.pageCount() }.getOrElse { e ->
@@ -100,6 +139,19 @@ class ComicReaderFragment : Fragment() {
                 }
             })
         }
+    }
+
+    /** Ask the user whether to refresh a stale offline copy. Resolves to true/false. */
+    private suspend fun confirmUpdate(): Boolean = suspendCancellableCoroutine { cont ->
+        val dialog = AlertDialog.Builder(requireContext())
+            .setTitle("Contenu mis à jour")
+            .setMessage("Une nouvelle version de ce comic est disponible sur le serveur. Mettre à jour la copie hors-ligne ?")
+            .setPositiveButton("Mettre à jour") { _, _ -> if (cont.isActive) cont.resumeWith(Result.success(true)) }
+            .setNegativeButton("Plus tard") { _, _ -> if (cont.isActive) cont.resumeWith(Result.success(false)) }
+            .setOnCancelListener { if (cont.isActive) cont.resumeWith(Result.success(false)) }
+            .create()
+        cont.invokeOnCancellation { dialog.dismiss() }
+        dialog.show()
     }
 
     override fun onDestroyView() { super.onDestroyView(); _b = null }

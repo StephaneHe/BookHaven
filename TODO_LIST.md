@@ -1,5 +1,14 @@
 # BookHaven — TODO
 
+## 2026-09-19 — Fix cache Android contenu périmé (web 2.7.6 + android 1.8.0/60)
+
+- [x] Empreinte `content_version` (file_size:modified_at) exposée par Flask
+      (`/comic-pages`, détail, liste). App : cache de pages clé par empreinte
+      (purge des versions périmées), lecteur online lit la version depuis
+      `/comic-pages` ; offline mémorise `contentVersion` (Room 4→5) et propose
+      « Mettre à jour » si le serveur a changé. Manhua 1263 pages repris sans
+      réinstall. Redémarrage Flask fait (2.7.6). **À valider sur device/émulateur.**
+
 ## 2026-09-18 — Skill roliascan réutilisable (web 2.7.5)
 
 - [x] Skill `.claude/skills/roliascan-manhua/SKILL.md` + `scripts/download_roliascan.py`

@@ -11,5 +11,7 @@ data class DownloadedBook(
     val format: String,
     val localPath: String,
     val downloadedAt: Long,
-    val fileSize: Long
+    val fileSize: Long,
+    // Server content fingerprint at download time; used to detect a stale offline copy.
+    val contentVersion: String = ""
 )

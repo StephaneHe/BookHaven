@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.7.5"
+__version__ = "2.7.6"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -602,6 +602,16 @@ def api_create_user():
 
 # ── API: Library ─────────────────────────────────────────────────────────────
 
+def _content_version(file_size, modified_at):
+    """Stable content fingerprint for client cache invalidation.
+
+    Combines file_size and modified_at (both bump when a book's file is
+    regenerated, e.g. a manhua CBZ rebuilt with more pages). The Android app
+    keys its comic CBZ / page-cache on this so it never serves stale content.
+    """
+    return f"{file_size or 0}:{modified_at or ''}"
+
+
 @app.route("/api/books")
 @login_required
 def api_books():
@@ -668,6 +678,8 @@ def api_books():
             query += f" ORDER BY {sort_map.get(sort, sort_map['title'])}" + offset
             rows = conn.execute(query, params).fetchall()
         books = [dict(row) for row in rows]
+        for b in books:
+            b["content_version"] = _content_version(b.get("file_size"), b.get("modified_at"))
         books = _group_format_variants(books)
 
         conn.close()
@@ -695,6 +707,7 @@ def api_book_detail(book_id):
             return jsonify({"error": "Book not found"}), 404
 
         result = dict(book)
+        result["content_version"] = _content_version(result.get("file_size"), result.get("modified_at"))
 
         # Get user's reading progress
         progress = conn.execute(
@@ -1529,18 +1542,21 @@ def api_put_epub_locations(book_id):
 def api_comic_pages(book_id):
     """List all pages in a comic archive."""
     conn = database.get_db()
-    book = conn.execute("SELECT path, format FROM books WHERE id = ?", (book_id,)).fetchone()
+    book = conn.execute(
+        "SELECT path, format, file_size, modified_at FROM books WHERE id = ?",
+        (book_id,)).fetchone()
     conn.close()
 
     if not book:
         abort(404)
 
+    cver = _content_version(book["file_size"], book["modified_at"])
     resolved_path = _resolve_book_path(book["path"])
     if book["format"] == "mobi":
         count = _mobi_page_count(resolved_path)
-        return jsonify({"pages": list(range(count)), "total": count})
+        return jsonify({"pages": list(range(count)), "total": count, "content_version": cver})
     pages = _list_comic_pages(resolved_path, book["format"])
-    return jsonify({"pages": pages, "total": len(pages)})
+    return jsonify({"pages": pages, "total": len(pages), "content_version": cver})
 
 
 @app.route("/api/books/<int:book_id>/comic-page/<int:page_num>")

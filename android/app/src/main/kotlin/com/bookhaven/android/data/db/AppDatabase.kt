@@ -13,7 +13,7 @@ import com.bookhaven.android.data.db.entity.ReadingProgress
 
 @Database(
     entities = [DownloadedBook::class, ReadingProgress::class, CachedBook::class],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -47,6 +47,14 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(database: SupportSQLiteDatabase) {
                 database.execSQL(
                     "ALTER TABLE reading_progress ADD COLUMN pending_sync INTEGER NOT NULL DEFAULT 0"
+                )
+            }
+        }
+
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(database: SupportSQLiteDatabase) {
+                database.execSQL(
+                    "ALTER TABLE downloaded_books ADD COLUMN contentVersion TEXT NOT NULL DEFAULT ''"
                 )
             }
         }

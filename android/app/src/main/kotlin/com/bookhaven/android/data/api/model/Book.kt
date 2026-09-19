@@ -18,7 +18,9 @@ data class Book(
     @SerializedName("volume_count") val volumeCount: Int = 0,
     @SerializedName("progress") val progress: Float = 0f,
     @SerializedName("current_location") val currentLocation: String = "",
-    @SerializedName("last_read") val lastRead: String = ""
+    @SerializedName("last_read") val lastRead: String = "",
+    // Content fingerprint (file_size:modified_at) — see ComicPagesResponse.
+    @SerializedName("content_version") val contentVersion: String = ""
 )
 
 data class BooksResponse(
