@@ -5,6 +5,26 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.7] - 2026-09-19
+
+### Fixed
+- **Re-vérification exhaustive du manhua « Sir, Don't Show Off » (ch57 signalé).**
+  Re-scan des 217 chapitres vs CDN : **rien à compléter** — 0 strip manquant,
+  0 trou source, 0 tronqué, **1265 images, 0 défectueuse**. ch57 = 4 strips
+  valides `page_001/016/031/046`, identiques au CDN, s'enchaîne sur ch58. Cause
+  probable du « ch57 incomplet » côté utilisateur = **app Android antérieure à
+  1.9.0** ayant mis en cache l'ancien contenu (avant les +294 strips) sans
+  `content_version` ; l'APK 1.9.0 (invalidation cache + lecteur pleine largeur)
+  résout l'affichage. CBZ non régénéré (contenu inchangé). Détail :
+  `docs/manhua-recheck-progress.md`.
+- **`fetch_manhua_strips.py` durci** : fin de chapitre = **2 404 consécutifs** (au
+  lieu du 1er 404) → détecte un strip manquant au milieu (trou source, anomalie
+  `source-gap`) au lieu de tronquer ; anomalies exposées dans le manifeste.
+
+### Changed
+- **`__version__` 2.7.6 → 2.7.7.** ⚠️ **Redémarrage Flask requis** (reflet version ;
+  aucun changement de données ni de comportement serveur).
+
 ## [2.7.6] - 2026-09-19
 
 ### Added

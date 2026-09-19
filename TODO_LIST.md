@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-19 — Re-vérif intégrité manhua (ch57) (web 2.7.7)
+
+- [x] Re-scan exhaustif 217 ch vs CDN (enumerator durci : fin = 2×404 → détecte les
+      trous milieu) : **0 manquant, 0 trou, 0 tronqué, 1265 img 0 défaut**. ch57 = 4
+      strips complets. Cause « ch57 incomplet » = app < 1.9.0 (cache pré-repair sans
+      content_version) → installer l'APK 1.9.0. CBZ non régénéré (contenu inchangé).
+      Détail : `docs/manhua-recheck-progress.md`.
+
 ## 2026-09-19 — P1-A lecteur manhua Android = web (android 1.9.0/61)
 
 - [x] Lecteur webtoon **vertical continu, pleine largeur** (fini le fit-height) :

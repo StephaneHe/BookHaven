@@ -44,8 +44,16 @@ PAGED_END_AFTER_MISSES = 2   # early jpg chapters use contiguous numbering
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp")
 
 
+ANOMALIES = []
+
+
 def log(msg):
     print(msg, flush=True)
+
+
+def flag(kind, msg):
+    ANOMALIES.append({"kind": kind, "msg": msg})
+    log(f"  ! [{kind}] {msg}")
 
 
 def fetch(url):
@@ -148,31 +156,41 @@ def process_chapter(localdir):
     ad_slots = []
 
     if regime == "stitched":
+        # Strips are numbered 1,16,31,... (step 15). End = TWO consecutive 404s, so a
+        # single missing strip in the middle (a real source gap) is recorded as a gap
+        # and we keep going instead of truncating the chapter at the first 404.
         idx = 1
-        misses = 0
-        while True:
+        consec404 = 0
+        seen404 = []           # every 404 index (trailing ones trimmed after the loop)
+        while idx <= 600:
             fn = f"page_{idx:03d}{suffix}.{ext}"
             dest = os.path.join(chdir, fn)
-            expected.append(idx)
             if local_has_valid(dest):
-                present.append(idx); idx += STRIP_STEP; continue
+                present.append(idx); expected.append(idx); consec404 = 0; idx += STRIP_STEP; continue
             data, st = fetch(STORAGE.format(mid=MANGA_ID, key=key, fn=fn))
             if st == "ok" and data:
+                expected.append(idx)
                 if valid_image_bytes(dest, data):
                     save(dest, data); downloaded.append(idx)
                 else:
                     bad.append(idx)
-                misses = 0
+                    flag("truncated", f"_{key}/{fn} downloaded but failed integrity")
+                consec404 = 0
             elif st == "404":
-                expected.pop()                  # not a real strip index
-                missing404.append(idx)
-                misses += 1
-                if misses >= 1:                 # step is fixed; first 404 = end
+                seen404.append(idx)
+                consec404 += 1
+                if consec404 >= 2:
                     break
             else:                               # transient err after retries
                 bad.append(idx)
+                flag("transient", f"_{key}/{fn} transient error after {RETRIES} retries")
             idx += STRIP_STEP
             time.sleep(PAGE_DELAY)
+        last_real = max(expected) if expected else 0
+        gaps = [i for i in seen404 if i < last_real]          # real mid-chapter holes
+        missing404 = [i for i in seen404 if i >= last_real]   # past-end (the true end)
+        if gaps:
+            flag("source-gap", f"_{key}: missing strip(s) at {gaps} before the last strip page_{last_real:03d}")
     else:  # paged (contiguous jpg)
         p = 1
         misses = 0
@@ -222,11 +240,13 @@ def main():
     total_dl = sum(len(r.get("downloaded", [])) for r in results)
     total_bad = sum(len(r.get("bad", [])) for r in results)
     summary = {"chapters": len(dirs), "strips_downloaded": total_dl, "strips_bad": total_bad,
-               "detail": results}
+               "anomalies": ANOMALIES, "detail": results}
     json.dump(summary, open(os.path.join(OUT_ROOT, "_strips_manifest.json"), "w"), indent=1)
     log("=" * 60)
-    log(f"DONE: {total_dl} strips downloaded, {total_bad} bad/transient. "
-        f"Manifest -> _strips_manifest.json")
+    log(f"DONE: {total_dl} strips downloaded, {total_bad} bad/transient, "
+        f"{len(ANOMALIES)} anomalies. Manifest -> _strips_manifest.json")
+    for a in ANOMALIES[:40]:
+        log(f"  [{a['kind']}] {a['msg']}")
 
 
 if __name__ == "__main__":
