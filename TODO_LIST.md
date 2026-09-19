@@ -1,5 +1,12 @@
 # BookHaven — TODO
 
+## 2026-09-19 — Reprise 404 transitoires manhua (web 2.7.11)
+
+- [x] Téléchargeur durci (RETRIES 5→8, retry même sur 404 pour images de la liste
+      autoritative) + passe complète 217 ch : **0 récupéré, 0 absence réelle, 0 échec
+      endpoint** (déjà complet). 38 « local≠liste » = pubs 728×90 exclues ; seul 172.5
+      réellement court (1 img). CBZ non régénéré. Détail `docs/manhua-retry-verification.md`.
+
 ## 2026-09-19 — Préchargement lecteur manhua (web 2.7.10 + android 1.9.1/62)
 
 - [x] **Web** : pré-décodage des planches à venir (`IntersectionObserver` marge 1,5

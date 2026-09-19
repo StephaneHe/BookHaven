@@ -5,6 +5,23 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.11] - 2026-09-19
+
+### Fixed
+- **Reprise anti-404-transitoire du manhua + durcissement du téléchargeur.**
+  `fetch_manhua_strips.py` : **RETRIES 5 → 8** (backoff 1,5 s×), et **retry même sur
+  404** pour les images de la liste autoritative (`/auth/chapter-content`) — un 404
+  sur une image que l'endpoint garantit est un hoquet transitoire du CDN, pas une
+  absence. Passe complète sur les 217 chapitres : **0 planche à récupérer, 0
+  absence réelle, 0 échec d'endpoint** (tout était déjà complet depuis 2.7.8). Les
+  38 « local ≠ liste » = emplacements de **pub 728×90** exclus volontairement ;
+  seul **172.5** est réellement court (1 image, confirmé par la liste). CBZ non
+  régénéré, `content_version` inchangé. Détail : `docs/manhua-retry-verification.md`.
+
+### Changed
+- **`__version__` 2.7.10 → 2.7.11.** ⚠️ **Redémarrage Flask requis** (reflet version ;
+  aucun changement de données ni de comportement serveur).
+
 ## [2.7.10] - 2026-09-19
 
 ### Changed

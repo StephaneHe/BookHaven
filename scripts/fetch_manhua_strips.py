@@ -44,7 +44,7 @@ UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
 IMG_REFERER = "https://roliascan.org/"     # CDN host for the images
 SITE_REFERER = "https://roliascan.com/"    # site host for the content endpoint
-RETRIES = 5
+RETRIES = 8            # generous: the site is unstable — beat transient 404/errors
 PAGE_DELAY = 0.3
 AD_MD5 = "ed6d7bf6aa"
 
@@ -67,19 +67,24 @@ def _get(url, referer, timeout=45):
     return urllib.request.urlopen(req, timeout=timeout)
 
 
-def fetch_bytes(url, referer=IMG_REFERER):
-    """Return (bytes|None, status) where status in {'ok','404','err'}; retries transient."""
+def fetch_bytes(url, referer=IMG_REFERER, retry_404=False):
+    """Return (bytes|None, status) where status in {'ok','404','err'}; retries transient.
+
+    retry_404: retry even on HTTP 404. Use it for images that the AUTHORITATIVE
+    chapter list says exist — a 404 there is almost always a transient hiccup of the
+    unstable CDN, not a real absence, so we back off and try again.
+    """
     for a in range(RETRIES):
         try:
             with _get(url, referer, timeout=30) as r:
                 data = r.read()
             return (data if data and len(data) > 200 else None), ("ok" if data else "err")
         except urllib.error.HTTPError as e:
-            if e.code == 404:
+            if e.code == 404 and not retry_404:
                 return None, "404"
-            time.sleep(1.0 * (a + 1) + random.random())
+            time.sleep(1.5 * (a + 1) + random.random())
         except Exception:
-            time.sleep(1.0 * (a + 1) + random.random())
+            time.sleep(1.5 * (a + 1) + random.random())
     return None, "err"
 
 
@@ -168,7 +173,9 @@ def process_chapter(num, postid):
         dest = os.path.join(chdir, fn)
         if local_has_valid(dest):
             present.append(fn); continue
-        data, st = fetch_bytes(url, IMG_REFERER)
+        # retry_404: this URL is in the authoritative list, so a 404 is a transient
+        # CDN hiccup, not a real absence -> keep retrying.
+        data, st = fetch_bytes(url, IMG_REFERER, retry_404=True)
         if data and is_ad_gif(data):
             ads.append(fn); continue                 # trailing ad banner: excluded, never saved
         if data and valid_image_bytes(dest, data):
