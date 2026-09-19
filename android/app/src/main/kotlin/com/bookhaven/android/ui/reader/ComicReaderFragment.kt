@@ -1,14 +1,20 @@
 package com.bookhaven.android.ui.reader
 
+import android.content.SharedPreferences
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.util.Log
 import android.view.LayoutInflater
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.bookhaven.android.data.api.ApiService
 import com.bookhaven.android.data.api.toUserMessage
@@ -22,6 +28,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
+import kotlin.math.roundToInt
 
 private const val TAG = "ComicReaderFragment"
 
@@ -33,13 +40,27 @@ class ComicReaderFragment : Fragment() {
 
     @Inject lateinit var api: ApiService
     @Inject lateinit var downloadRepo: DownloadRepository
+    @Inject lateinit var prefs: SharedPreferences
 
     private var bookId = -1
     private var serverUrl = ""
     private var localPath: String? = null
     private var loadError: String? = null
 
+    // Continuous (webtoon) state
+    private lateinit var source: ComicPageSource
+    private var totalPages = 0
+    private var chapters: List<Chapter> = emptyList()
+    private var chapterIdx = 0
+    private var zoomPct = 100
+
+    private data class Chapter(val key: String, val num: Double, val idxs: List<Int>)
+
     companion object {
+        private const val ZOOM_MIN = 40
+        private const val ZOOM_MAX = 400
+        private const val ZOOM_STEP = 15
+
         fun newInstance(bookId: Int, serverUrl: String, localPath: String?) =
             ComicReaderFragment().apply {
                 arguments = Bundle().apply {
@@ -66,16 +87,13 @@ class ComicReaderFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
 
         viewLifecycleOwner.lifecycleScope.launch {
-            // Read pages ON DEMAND: offline from the local CBZ (ZipFile random
-            // access), online from the paged API. Never load the whole archive.
-            // Cache is keyed by the server content fingerprint so a rebuilt comic
-            // (e.g. manhua with more pages) is never served stale.
+            // Cache keyed by the server content fingerprint (see ComicPageSource) so a
+            // rebuilt comic is never served stale; offline copies offer to update.
             var local = localPath?.let { File(it) }?.takeIf { it.exists() }
             var contentVersion = ""
-            var knownCount: Int? = null
+            var names: List<String>? = null
 
             if (local != null) {
-                // Offline copy present. If online, detect a stale copy and offer to update.
                 val stored = downloadRepo.getDownload(bookId)?.contentVersion ?: ""
                 contentVersion = stored
                 val fresh = withContext(Dispatchers.IO) { runCatching { api.getBookDetail(bookId) }.getOrNull() }
@@ -97,51 +115,226 @@ class ComicReaderFragment : Fragment() {
                     }
                 }
             } else {
-                // Online: one call gives both the page list and the content version.
                 val resp = withContext(Dispatchers.IO) { runCatching { api.getComicPages(bookId) }.getOrNull() }
                 contentVersion = resp?.contentVersion.orEmpty()
-                knownCount = resp?.pages?.size
+                names = resp?.pages
             }
 
-            val source = ComicPageSource(
-                requireContext().applicationContext, bookId, api, local, contentVersion, knownCount
+            source = ComicPageSource(
+                requireContext().applicationContext, bookId, api, local, contentVersion, names
             )
 
-            val count = withContext(Dispatchers.IO) {
+            totalPages = withContext(Dispatchers.IO) {
                 runCatching { source.pageCount() }.getOrElse { e ->
                     Log.e(TAG, "pageCount failed for bookId=$bookId", e)
                     loadError = "Failed to read comic: ${e.toUserMessage()}"
                     0
                 }
             }
-            if (count == 0) {
+            if (totalPages == 0) {
                 requireContext().showError(loadError ?: "No pages found in this comic")
                 return@launch
             }
 
-            b.viewPager.adapter = ComicPageAdapter(count, viewLifecycleOwner.lifecycleScope) { source.pageFile(it) }
-            b.tvPageNum.text = "1 / $count"
             b.comicProgressBar.max = 100
+            val startPage = (downloadRepo.resolveProgress(bookId)?.position?.toIntOrNull() ?: 0)
+                .coerceIn(0, totalPages - 1)
 
-            // Restore saved position, reconciled with the server (see resolveProgress).
-            val saved = downloadRepo.resolveProgress(bookId)
-            val startPage = saved?.position?.toIntOrNull() ?: 0
-            if (startPage in 1 until count) b.viewPager.setCurrentItem(startPage, false)
-
-            b.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
-                override fun onPageSelected(position: Int) {
-                    val pct = (position + 1).toFloat() / count * 100f
-                    b.tvPageNum.text = "${position + 1} / $count"
-                    b.comicProgressBar.progress = pct.toInt()
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        downloadRepo.saveProgress(bookId, position.toString(), pct)
-                    }
-                }
-            })
+            // Manhua/webtoon (tall first plate) -> continuous vertical reader like the
+            // web; normal comics keep the paged horizontal flip.
+            val isWebtoon = withContext(Dispatchers.IO) { detectWebtoon() }
+            if (isWebtoon) {
+                setupContinuous(startPage)
+            } else {
+                setupPaged(startPage)
+            }
         }
     }
 
-    /** Ask the user whether to refresh a stale offline copy. Resolves to true/false. */
+    // ── Webtoon detection: first plate ratio h/w > 2 (same rule as the web) ──────
+    private suspend fun detectWebtoon(): Boolean {
+        val f = source.pageFile(0) ?: return false
+        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(f.absolutePath, o)
+        return o.outWidth > 0 && o.outHeight.toFloat() / o.outWidth > 2f
+    }
+
+    // ── Paged mode (normal comics) ──────────────────────────────────────────────
+    private fun setupPaged(startPage: Int) {
+        b.viewPager.visibility = View.VISIBLE
+        b.hScroll.visibility = View.GONE
+        b.llTopControls.visibility = View.GONE
+        b.viewPager.adapter = ComicPageAdapter(totalPages, viewLifecycleOwner.lifecycleScope) { source.pageFile(it) }
+        b.tvPageNum.text = "1 / $totalPages"
+        if (startPage in 1 until totalPages) b.viewPager.setCurrentItem(startPage, false)
+        b.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageSelected(position: Int) {
+                val pct = (position + 1).toFloat() / totalPages * 100f
+                b.tvPageNum.text = "${position + 1} / $totalPages"
+                b.comicProgressBar.progress = pct.toInt()
+                viewLifecycleOwner.lifecycleScope.launch {
+                    downloadRepo.saveProgress(bookId, position.toString(), pct)
+                }
+            }
+        })
+    }
+
+    // ── Continuous (webtoon) mode ───────────────────────────────────────────────
+    private suspend fun setupContinuous(startPlate: Int) {
+        b.viewPager.visibility = View.GONE
+        b.hScroll.visibility = View.VISIBLE
+        b.llTopControls.visibility = View.VISIBLE
+
+        chapters = buildChapters(source.pageNames())
+        b.rvContinuous.layoutManager = LinearLayoutManager(requireContext())
+
+        // Per-book zoom (device-local UI preference, like the web's localStorage).
+        zoomPct = prefs.getInt(zoomKey(), 100).coerceIn(ZOOM_MIN, ZOOM_MAX)
+        b.tvZoom.text = "$zoomPct%"
+
+        b.btnZoomIn.setOnClickListener { setZoom(zoomPct + ZOOM_STEP) }
+        b.btnZoomOut.setOnClickListener { setZoom(zoomPct - ZOOM_STEP) }
+        b.tvZoom.setOnClickListener { setZoom(100) }                 // tap label = reset (fit width)
+        b.btnChapterPrev.setOnClickListener { renderChapter(chapterIdx - 1, null) }
+        b.btnChapterNext.setOnClickListener { renderChapter(chapterIdx + 1, null) }
+        b.tvChapter.setOnClickListener { showChapterPicker() }
+
+        setupPinchZoom()
+        setupScrollTracking()
+
+        renderChapter(chapterOfPlate(startPlate), startPlate)
+    }
+
+    private fun buildChapters(pages: List<String>): List<Chapter> {
+        val out = mutableListOf<Chapter>()
+        var cur: MutableList<Int>? = null
+        var curKey = ""
+        pages.forEachIndexed { i, name ->
+            val m = Regex("^(\\d+)_").find(name)
+            val key = m?.groupValues?.get(1) ?: "__"
+            if (cur == null || curKey != key) {
+                val idxs = mutableListOf<Int>()
+                val num = m?.groupValues?.get(1)?.toDoubleOrNull()?.div(10) ?: (out.size + 1).toDouble()
+                out.add(Chapter(key, num, idxs))
+                cur = idxs; curKey = key
+            }
+            cur!!.add(i)
+        }
+        return out
+    }
+
+    private fun chapterOfPlate(plate: Int): Int {
+        chapters.forEachIndexed { i, c ->
+            if (c.idxs.isNotEmpty() && plate >= c.idxs.first() && plate <= c.idxs.last()) return i
+        }
+        return 0
+    }
+
+    private fun effectiveWidthPx(): Int {
+        val screen = resources.displayMetrics.widthPixels
+        return (screen * zoomPct / 100).coerceAtLeast(1)
+    }
+
+    private fun renderChapter(index: Int, scrollToPlate: Int?) {
+        if (chapters.isEmpty()) return
+        chapterIdx = index.coerceIn(0, chapters.size - 1)
+        val chap = chapters[chapterIdx]
+        val adapter = ContinuousComicAdapter(
+            plateIndices = chap.idxs,
+            scope = viewLifecycleOwner.lifecycleScope,
+            effectiveWidthPx = ::effectiveWidthPx,
+            isLastChapter = chapterIdx >= chapters.size - 1,
+            onNextChapter = { renderChapter(chapterIdx + 1, null) },
+            loadPage = { source.pageFile(it) },
+        )
+        b.rvContinuous.layoutParams = b.rvContinuous.layoutParams.apply { width = effectiveWidthPx() }
+        b.rvContinuous.adapter = adapter
+        val chapLabel = if (chap.num % 1.0 == 0.0) chap.num.toInt().toString() else chap.num.toString()
+        b.tvChapter.text = "Ch. $chapLabel  (${chapterIdx + 1}/${chapters.size})"
+
+        val target = scrollToPlate ?: chap.idxs.firstOrNull() ?: 0
+        val posInChapter = chap.idxs.indexOf(target).coerceAtLeast(0)
+        (b.rvContinuous.layoutManager as LinearLayoutManager)
+            .scrollToPositionWithOffset(posInChapter, 0)
+        updateIndicator(target)
+    }
+
+    private fun showChapterPicker() {
+        if (chapters.isEmpty()) return
+        val labels = chapters.map { c ->
+            val n = if (c.num % 1.0 == 0.0) c.num.toInt().toString() else c.num.toString()
+            "Ch. $n"
+        }.toTypedArray()
+        AlertDialog.Builder(requireContext())
+            .setTitle("Aller au chapitre")
+            .setItems(labels) { _, which -> renderChapter(which, null) }
+            .show()
+    }
+
+    private fun updateIndicator(globalIdx: Int) {
+        b.tvPageNum.text = "${globalIdx + 1} / $totalPages"
+        b.comicProgressBar.progress = ((globalIdx + 1).toFloat() / totalPages * 100f).toInt()
+    }
+
+    private fun setupScrollTracking() {
+        b.rvContinuous.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                val lm = rv.layoutManager as? LinearLayoutManager ?: return
+                val pos = lm.findFirstVisibleItemPosition()
+                val adapter = rv.adapter as? ContinuousComicAdapter ?: return
+                val globalIdx = adapter.globalIndexAt(pos) ?: return
+                updateIndicator(globalIdx)
+                val pct = (globalIdx + 1).toFloat() / totalPages * 100f
+                viewLifecycleOwner.lifecycleScope.launch {
+                    downloadRepo.saveProgress(bookId, globalIdx.toString(), pct)
+                }
+            }
+        })
+    }
+
+    // Pinch-to-zoom: live visual scale during the gesture, baked into the real
+    // plate width (crisp re-render) on release. Buttons remain the reliable path.
+    private fun setupPinchZoom() {
+        val rv = b.rvContinuous
+        val detector = ScaleGestureDetector(requireContext(),
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                var live = 1f
+                override fun onScaleBegin(d: ScaleGestureDetector): Boolean { live = 1f; return true }
+                override fun onScale(d: ScaleGestureDetector): Boolean {
+                    live = (live * d.scaleFactor).coerceIn(0.3f, 4f)
+                    rv.pivotX = d.focusX; rv.pivotY = d.focusY
+                    rv.scaleX = live; rv.scaleY = live
+                    return true
+                }
+                override fun onScaleEnd(d: ScaleGestureDetector) {
+                    rv.scaleX = 1f; rv.scaleY = 1f
+                    setZoom((zoomPct * live).roundToInt())
+                }
+            })
+        rv.addOnItemTouchListener(object : RecyclerView.SimpleOnItemTouchListener() {
+            override fun onInterceptTouchEvent(rv: RecyclerView, e: MotionEvent): Boolean {
+                detector.onTouchEvent(e)
+                return detector.isInProgress
+            }
+            override fun onTouchEvent(rv: RecyclerView, e: MotionEvent) { detector.onTouchEvent(e) }
+        })
+    }
+
+    private fun setZoom(z: Int) {
+        zoomPct = z.coerceIn(ZOOM_MIN, ZOOM_MAX)
+        b.tvZoom.text = "$zoomPct%"
+        prefs.edit().putInt(zoomKey(), zoomPct).apply()
+        // Preserve the reading position across the re-measure.
+        val lm = b.rvContinuous.layoutManager as? LinearLayoutManager
+        val pos = lm?.findFirstVisibleItemPosition() ?: 0
+        b.rvContinuous.layoutParams = b.rvContinuous.layoutParams.apply { width = effectiveWidthPx() }
+        b.rvContinuous.adapter?.notifyDataSetChanged()
+        if (pos >= 0) lm?.scrollToPositionWithOffset(pos, 0)
+    }
+
+    private fun zoomKey() = "bookhaven.zoom.comic.$bookId"
+
+    /** Ask the user whether to refresh a stale offline copy. */
     private suspend fun confirmUpdate(): Boolean = suspendCancellableCoroutine { cont ->
         val dialog = AlertDialog.Builder(requireContext())
             .setTitle("Contenu mis à jour")

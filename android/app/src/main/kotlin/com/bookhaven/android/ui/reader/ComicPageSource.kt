@@ -20,6 +20,9 @@ import java.util.zip.ZipFile
  * regenerates a comic (e.g. a manhua rebuilt with more pages) the version changes,
  * so old files no longer match and are purged on construction — the reader never
  * serves stale pages. Files live in a bounded LRU disk cache under cacheDir/comic_pages.
+ *
+ * pageNames() exposes the ordered plate names (arcnames like NNNNN_NNN.ext) so the
+ * reader can derive chapters exactly like the web (5-digit prefix / 10 = chapter).
  */
 class ComicPageSource(
     context: Context,
@@ -27,15 +30,14 @@ class ComicPageSource(
     private val api: ApiService,
     private val localCbz: File?,
     contentVersion: String,
-    private val knownCount: Int? = null,
+    private val knownNames: List<String>? = null,
 ) {
     private val cacheDir = File(context.cacheDir, "comic_pages").apply { mkdirs() }
     private val imageExts = setOf("jpg", "jpeg", "png", "webp", "gif")
     private val ver = contentVersion.ifBlank { "0" }.replace(Regex("[^A-Za-z0-9]"), "_")
     private val prefix = "b${bookId}_v${ver}_"
     private val zipLock = Mutex()
-    private var entryNames: List<String>? = null
-    private var count = -1
+    private var names: List<String>? = null
 
     init { purgeOtherVersions() }
 
@@ -46,22 +48,24 @@ class ComicPageSource(
         }?.forEach { it.delete() }
     }
 
-    suspend fun pageCount(): Int {
-        if (count >= 0) return count
-        count = when {
-            knownCount != null -> knownCount
+    /** Ordered plate names (arcnames). Online: from the API; offline: CBZ entries. */
+    suspend fun pageNames(): List<String> {
+        names?.let { return it }
+        names = when {
+            knownNames != null -> knownNames
             localCbz != null -> withContext(Dispatchers.IO) {
                 ZipFile(localCbz).use { z ->
-                    entryNames = z.entries().asSequence()
+                    z.entries().asSequence()
                         .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in imageExts }
                         .map { it.name }.sorted().toList()
-                    entryNames!!.size
                 }
             }
-            else -> api.getComicPages(bookId).pages.size
+            else -> api.getComicPages(bookId).pages
         }
-        return count
+        return names!!
     }
+
+    suspend fun pageCount(): Int = pageNames().size
 
     /** A cached File for page [index] (fetched or extracted on demand). Null on failure. */
     suspend fun pageFile(index: Int): File? = withContext(Dispatchers.IO) {
@@ -73,8 +77,7 @@ class ComicPageSource(
         try {
             val tmp = File(cacheDir, "${prefix}p${index}.part")
             if (localCbz != null) {
-                val names = entryNames ?: run { pageCount(); entryNames!! }
-                val name = names.getOrNull(index) ?: return@withContext null
+                val name = pageNames().getOrNull(index) ?: return@withContext null
                 zipLock.withLock {
                     ZipFile(localCbz).use { z ->
                         z.getInputStream(z.getEntry(name)).use { i -> tmp.outputStream().use { o -> i.copyTo(o) } }

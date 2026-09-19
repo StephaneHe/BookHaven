@@ -1,5 +1,14 @@
 # BookHaven — TODO
 
+## 2026-09-19 — P1-A lecteur manhua Android = web (android 1.9.0/61)
+
+- [x] Lecteur webtoon **vertical continu, pleine largeur** (fini le fit-height) :
+      détection auto (ratio>2), chapitres dérivés des noms (préfixe/10), un chapitre
+      à la fois, nav ‹/›/liste + « Chapitre suivant », position = index global (compat
+      web). **Zoom par livre** (SharedPreferences, pincer+boutons, 40–400 %, restauré).
+      Robustesse P0-B conservée (SSIV tuilage, à la demande, largeHeap) → pas d'OOM.
+      Aucun changement serveur. **À valider device/émulateur** (non lancé ce tour).
+
 ## 2026-09-19 — Fix cache Android contenu périmé (web 2.7.6 + android 1.8.0/60)
 
 - [x] Empreinte `content_version` (file_size:modified_at) exposée par Flask

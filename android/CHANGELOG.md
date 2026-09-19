@@ -1,5 +1,34 @@
 # Changelog — BookHaven Android
 
+## [1.9.0] - 2026-09-19
+
+### Changed
+- **Lecteur manhua/webtoon identique au web mobile (P1-A).** Le manhua s'ouvre
+  désormais en **défilement vertical continu** avec les planches en **PLEINE
+  LARGEUR** (largeur = écran × zoom, hauteur = largeur × ratio de la planche),
+  exactement comme le lecteur web (`#comic-scroll img { width: var(--comic-zoom);
+  height: auto }`). Fini le **fit-height** qui rendait les longues planches
+  minuscules. Détection auto du type webtoon (1ʳᵉ planche h/l > 2, même règle que
+  le web) ; les comics « normaux » gardent le mode paginé (ViewPager2).
+  - **Chapitres dérivés des noms de planches** (préfixe `NNNNN_NNN`, préfixe/10 =
+    numéro, 172.5 inclus), chargés **un chapitre à la fois**, avec bouton
+    « Chapitre suivant ›», boutons ‹/› et sélecteur de chapitre (liste).
+  - **Position = index global de planche** (comme le web via `current_location`)
+    → reprise web ↔ Android compatible ; suivi au scroll (planche visible en haut).
+  - **Zoom mémorisé par livre** (SharedPreferences `bookhaven.zoom.comic.<id>`,
+    défaut 100 % = pleine largeur, 40–400 %, pas 15) : pincer + boutons −/label/+
+    (tap label = reset). Restauré à la réouverture du même livre ; chaque livre a
+    son propre zoom.
+
+### Added
+- `android:largeHeap="true"` — marge mémoire pour les longues planches webtoon.
+
+### Notes
+- Robustesse P0-B conservée : rendu par **SubsamplingScaleImageView** (tuilage
+  BitmapRegionDecoder), planches à la demande (cache LRU 300 Mo), recyclage
+  hors-écran, un seul chapitre monté à la fois → pas d'OOM sur le manhua 729 Mo.
+- versionCode 61, versionName 1.9.0. Aucun changement serveur (endpoints existants).
+
 ## [1.8.0] - 2026-09-19
 
 ### Fixed

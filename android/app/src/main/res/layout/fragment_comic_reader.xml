@@ -4,10 +4,106 @@
     android:layout_height="match_parent"
     android:background="#000000">
 
+    <!-- Paged mode (normal comics): one plate per page, horizontal flip -->
     <androidx.viewpager2.widget.ViewPager2
         android:id="@+id/viewPager"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
+
+    <!-- Continuous webtoon mode: full-width plates, vertical scroll. The
+         HorizontalScrollView lets a zoomed-in (>100%) strip pan sideways while
+         the RecyclerView scrolls vertically. -->
+    <HorizontalScrollView
+        android:id="@+id/hScroll"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:fillViewport="true"
+        android:scrollbars="none"
+        android:visibility="gone">
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/rvContinuous"
+            android:layout_width="wrap_content"
+            android:layout_height="match_parent"
+            android:layout_gravity="center_horizontal"
+            android:background="#000000" />
+
+    </HorizontalScrollView>
+
+    <!-- Top controls (continuous mode): chapter nav + zoom -->
+    <LinearLayout
+        android:id="@+id/llTopControls"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:background="#CC000000"
+        android:paddingHorizontal="8dp"
+        android:paddingVertical="4dp"
+        android:visibility="gone">
+
+        <Button
+            android:id="@+id/btnChapterPrev"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="‹"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:contentDescription="Chapitre précédent" />
+
+        <TextView
+            android:id="@+id/tvChapter"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:textColor="#FFFFFF"
+            android:textSize="14sp"
+            android:text="Ch." />
+
+        <Button
+            android:id="@+id/btnChapterNext"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="›"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:contentDescription="Chapitre suivant" />
+
+        <Button
+            android:id="@+id/btnZoomOut"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="−"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:contentDescription="Zoom arrière" />
+
+        <TextView
+            android:id="@+id/tvZoom"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:minWidth="44dp"
+            android:gravity="center"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp"
+            android:text="100%" />
+
+        <Button
+            android:id="@+id/btnZoomIn"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:text="+"
+            android:textColor="#FFFFFF"
+            android:textSize="20sp"
+            android:contentDescription="Zoom avant" />
+
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
