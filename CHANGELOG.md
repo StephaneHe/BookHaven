@@ -5,6 +5,18 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.10] - 2026-09-19
+
+### Changed
+- **Préchargement des planches dans le lecteur manhua/webtoon continu (web).**
+  Les planches à venir sont **pré-décodées** juste avant d'entrer dans la fenêtre
+  (`IntersectionObserver` sur `#comic-container`, marge ~1,5 écran) via
+  `img.decode()`, pour qu'une grande planche s'affiche instantanément au lieu de
+  hoqueter ; et les **3 premières planches du chapitre suivant** sont préchargées
+  sur `requestIdleCallback` (transition de chapitre fluide). Borné → mémoire/réseau
+  à plat. Inspiré du prefetch EPUB (3 sections sur idle). ⚠️ **Redémarrage Flask
+  requis** (reflet `__version__` ; le template se recharge à chaud).
+
 ## [2.7.9] - 2026-09-19
 
 ### Added

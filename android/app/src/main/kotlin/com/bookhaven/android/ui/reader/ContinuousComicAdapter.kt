@@ -42,6 +42,11 @@ class ContinuousComicAdapter(
     private val typePlate = 0
     private val typeFooter = 1
 
+    // Cache-warming prefetch: fetch the next few plates' FILES ahead of the bound
+    // position (no bitmap decode → memory-safe, bounded by PREFETCH_AHEAD and the
+    // LRU disk cache). Deduped so fast scrolling doesn't pile up work.
+    private val prefetched = HashSet<Int>()
+
     /** Global plate index for a plate item position (used to save reading position). */
     fun globalIndexAt(position: Int): Int? = plateIndices.getOrNull(position)
 
@@ -111,6 +116,11 @@ class ContinuousComicAdapter(
             setItemHeight(holder.ssiv, height)
             holder.ssiv.setImage(ImageSource.uri(Uri.fromFile(file)))
         }
+        // Warm the next PREFETCH_AHEAD plates into the disk cache (files only).
+        for (k in 1..PREFETCH_AHEAD) {
+            val idx = plateIndices.getOrNull(position + k) ?: break
+            if (prefetched.add(idx)) scope.launch { loadPage(idx) }
+        }
     }
 
     override fun onViewRecycled(holder: RecyclerView.ViewHolder) {
@@ -130,4 +140,6 @@ class ContinuousComicAdapter(
         BitmapFactory.decodeFile(file.absolutePath, o)
         return o.outWidth to o.outHeight
     }
+
+    companion object { private const val PREFETCH_AHEAD = 3 }
 }

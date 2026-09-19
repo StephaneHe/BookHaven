@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-19 — Préchargement lecteur manhua (web 2.7.10 + android 1.9.1/62)
+
+- [x] **Web** : pré-décodage des planches à venir (`IntersectionObserver` marge 1,5
+      écran + `img.decode()`) + prefetch des 3 premières planches du chapitre suivant
+      (idle). **Android** : prefetch des 3 planches suivantes (fichiers, cache LRU, pas
+      de bitmap → pas d'OOM) + 2 planches du chapitre suivant en approchant la fin.
+      Bornés + dédup. Inspiré du prefetch EPUB. APK buildé. **À valider device**.
+
 ## 2026-09-19 — Catégorie Webcomics + couverture manhua (web 2.7.9)
 
 - [x] Catégorie **Webcomics** (valeur libre `books.category`, chips web+Android

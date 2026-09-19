@@ -276,6 +276,8 @@ class ComicReaderFragment : Fragment() {
         b.comicProgressBar.progress = ((globalIdx + 1).toFloat() / totalPages * 100f).toInt()
     }
 
+    private val prefetchedChapters = HashSet<Int>()
+
     private fun setupScrollTracking() {
         b.rvContinuous.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
@@ -287,6 +289,16 @@ class ComicReaderFragment : Fragment() {
                 val pct = (globalIdx + 1).toFloat() / totalPages * 100f
                 viewLifecycleOwner.lifecycleScope.launch {
                     downloadRepo.saveProgress(bookId, globalIdx.toString(), pct)
+                }
+                // Near the end of the chapter → warm the NEXT chapter's first plates
+                // so the chapter transition is instant (bounded, files only).
+                val chap = chapters.getOrNull(chapterIdx) ?: return
+                val next = chapters.getOrNull(chapterIdx + 1) ?: return
+                if (lm.findLastVisibleItemPosition() >= chap.idxs.size - 2 &&
+                    prefetchedChapters.add(chapterIdx + 1)) {
+                    next.idxs.take(2).forEach { gi ->
+                        viewLifecycleOwner.lifecycleScope.launch { source.pageFile(gi) }
+                    }
                 }
             }
         })

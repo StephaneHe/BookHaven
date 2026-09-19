@@ -1,5 +1,15 @@
 # Changelog — BookHaven Android
 
+## [1.9.1] - 2026-09-19
+
+### Changed
+- **Préchargement des planches dans le lecteur webtoon continu.** À chaque planche
+  affichée, les **3 planches suivantes** sont pré-téléchargées (fichiers seulement,
+  dans le cache LRU — **aucun bitmap décodé**, donc pas d'OOM) ; et en approchant la
+  fin d'un chapitre, les **2 premières planches du chapitre suivant** sont préchargées
+  → scroll et transition de chapitre fluides. Fenêtre bornée + dédup (scroll rapide
+  n'empile pas de travail). Robustesse P0-B conservée. versionCode 62, versionName 1.9.1.
+
 ## [1.9.0] - 2026-09-19
 
 ### Changed

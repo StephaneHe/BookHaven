@@ -2865,6 +2865,7 @@ function comicRenderChapter(chIdx, scrollToPlate) {
     ? `<button class="next-chapter-btn" onclick="comicChapterStep(1)">Chapitre suivant ›</button>`
     : `<div class="end-of-manhua">— Fin —</div>`;
   scroll.innerHTML = html;
+  _comicSetupPrefetch(chIdx, chaps, bookId);
   document.getElementById('comic-chapter-select').value = String(chIdx);
   const container = document.getElementById('comic-container');
   container.scrollTop = 0;
@@ -2874,6 +2875,36 @@ function comicRenderChapter(chIdx, scrollToPlate) {
   if (scrollToPlate != null && scrollToPlate !== chap.idxs[0]) {
     const el = scroll.querySelector(`img[data-idx="${scrollToPlate}"]`);
     if (el) { el.scrollIntoView({ block: 'start' }); setTimeout(() => el.scrollIntoView({ block: 'start' }), 400); }
+  }
+}
+
+// Prefetch for the continuous reader: pre-DECODE plates just before they scroll
+// into view (so huge webtoon strips paint instantly instead of hitching), and warm
+// the NEXT chapter's first plates on idle for a seamless chapter transition. Bounded
+// (rootMargin ~1.5 screens ahead, 3 next-chapter plates) so memory/network stay flat.
+let _comicObserver = null;
+function _comicSetupPrefetch(chIdx, chaps, bookId) {
+  if (_comicObserver) { _comicObserver.disconnect(); _comicObserver = null; }
+  const container = document.getElementById('comic-container');
+  if ('IntersectionObserver' in window) {
+    _comicObserver = new IntersectionObserver((entries, obs) => {
+      for (const e of entries) {
+        if (e.isIntersecting) {
+          const img = e.target;
+          obs.unobserve(img);
+          if (img.decode) img.decode().catch(() => {});   // pre-decode ahead of paint
+        }
+      }
+    }, { root: container, rootMargin: '1500px 0px 1500px 0px' });
+    document.querySelectorAll('#comic-scroll img[data-idx]').forEach(img => _comicObserver.observe(img));
+  }
+  const next = chaps[chIdx + 1];
+  if (next) {
+    const warm = () => next.idxs.slice(0, 3).forEach(i => {
+      const im = new Image(); im.src = `/api/books/${bookId}/comic-page/${i}`;
+    });
+    if (typeof requestIdleCallback !== 'undefined') requestIdleCallback(warm, { timeout: 2000 });
+    else setTimeout(warm, 300);
   }
 }
 
