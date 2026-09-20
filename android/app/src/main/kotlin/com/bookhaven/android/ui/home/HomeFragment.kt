@@ -52,6 +52,9 @@ class HomeFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
+        binding.tvVersion.text =
+            "BookHaven v${com.bookhaven.android.BuildConfig.VERSION_NAME} (${com.bookhaven.android.BuildConfig.VERSION_CODE})"
+
         inProgressAdapter = ContinueReadingAdapter(
             serverUrl = ::serverUrl,
             onClick = ::openBook,

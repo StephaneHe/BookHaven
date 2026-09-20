@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-20 — Android : prefetch réel + version visible (android 1.9.2/63)
+
+- [x] Préchargement lecteur webtoon RÉEL : le prefetch précédent (fichiers seulement)
+      ne se voyait pas ; ajout `PrefetchLayoutManager` (extraLayoutSpace ~2 écrans) →
+      SSIV décode les planches suivantes en avance, borné (pas d'OOM). +`itemViewCacheSize=4`.
+- [x] Version visible : libellé en bas de l'Accueil (BuildConfig.VERSION_NAME/CODE) +
+      déjà présent en bas de Réglages. À valider device (scroll fluide, mémoire plateau).
+
 ## 2026-09-19 — Reprise 404 transitoires manhua (web 2.7.11)
 
 - [x] Téléchargeur durci (RETRIES 5→8, retry même sur 404 pour images de la liste

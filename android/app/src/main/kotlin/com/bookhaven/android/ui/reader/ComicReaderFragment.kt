@@ -1,5 +1,6 @@
 package com.bookhaven.android.ui.reader
 
+import android.content.Context
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -186,7 +187,12 @@ class ComicReaderFragment : Fragment() {
         b.llTopControls.visibility = View.VISIBLE
 
         chapters = buildChapters(source.pageNames())
-        b.rvContinuous.layoutManager = LinearLayoutManager(requireContext())
+        // Extra layout space below the viewport so RecyclerView binds (and SSIV starts
+        // decoding) the NEXT plates ~2 screens ahead → the next plate is already
+        // rendered when you reach it (real prefetch for a webtoon reader). Bounded to
+        // ~2 screens so at most ~1 extra tall strip is live (SSIV tiling keeps it safe).
+        b.rvContinuous.layoutManager = PrefetchLayoutManager(requireContext())
+        b.rvContinuous.setItemViewCacheSize(4)   // keep a few decoded holders around
 
         // Per-book zoom (device-local UI preference, like the web's localStorage).
         zoomPct = prefs.getInt(zoomKey(), 100).coerceIn(ZOOM_MIN, ZOOM_MAX)
@@ -360,4 +366,19 @@ class ComicReaderFragment : Fragment() {
     }
 
     override fun onDestroyView() { super.onDestroyView(); _b = null }
+}
+
+/**
+ * Lays out extra content below the viewport so upcoming plates are bound (and their
+ * SubsamplingScaleImageView starts decoding) well before they scroll into view —
+ * the real "prefetch" for a continuous webtoon reader. Bounded to ~2 screens below
+ * (and ~1 above) so at most ~1 extra tall strip is live at once; combined with SSIV
+ * tiling + LRU cache this stays memory-safe (no P0-B OOM regression).
+ */
+private class PrefetchLayoutManager(context: Context) : LinearLayoutManager(context) {
+    override fun calculateExtraLayoutSpace(state: RecyclerView.State, extraLayoutSpace: IntArray) {
+        val h = if (height > 0) height else 2000
+        extraLayoutSpace[0] = h          // above (scroll-back)
+        extraLayoutSpace[1] = h * 2      // below: pre-bind ~2 screens ahead
+    }
 }

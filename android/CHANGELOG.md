@@ -1,5 +1,26 @@
 # Changelog — BookHaven Android
 
+## [1.9.2] - 2026-09-20
+
+### Fixed
+- **Préchargement RÉEL des planches dans le lecteur webtoon.** Le prefetch du lot
+  précédent ne réchauffait que les *fichiers* (sans effet en hors-ligne et sans
+  anticiper le décodage) → aucun gain perçu. Ajout d'un `PrefetchLayoutManager`
+  (LinearLayoutManager avec `calculateExtraLayoutSpace` = ~2 écrans sous la fenêtre)
+  : RecyclerView **lie et décode (SubsamplingScaleImageView) les planches suivantes
+  ~2 écrans en avance** → la planche suivante est déjà rendue quand on l'atteint.
+  Bornée (~1 grande planche supplémentaire vive à la fois) + `itemViewCacheSize=4` +
+  prefetch fichiers conservé → **pas d'OOM** (robustesse P0-B). `ComicReaderFragment`
+  (PrefetchLayoutManager) + `ContinuousComicAdapter` (warm fichiers).
+
+### Added
+- **Version affichée sur l'écran d'accueil** (libellé discret en bas : « BookHaven
+  vX.Y.Z (code) », `BuildConfig.VERSION_NAME/CODE`) en plus de Réglages (qui
+  l'affichait déjà en bas).
+
+### Changed
+- versionCode 63, versionName 1.9.2.
+
 ## [1.9.1] - 2026-09-19
 
 ### Changed
