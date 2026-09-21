@@ -1,5 +1,14 @@
 # BookHaven — TODO
 
+## 2026-09-21 — Intégration manhua « Webtoon Character Na Kang Lim » (web 2.7.12)
+
+- [x] 173 ch / **8018 pages, 0 manquante** (vérif exhaustive endpoint autoritatif ;
+      intégrité 0 bad). Enregistré id 39573, catégorie **Webcomics**, couverture
+      officielle, content_version posé, CBZ 954 Mo. Visible sur 8097 ; reader **vertical
+      continu** (plate0 690×3000 ratio 4.35 > 2). Décimal 172.5 (2 pages, réel) ordonné
+      en dernier (préfixe 01725). `download_roliascan.py` généralisé (liste chapitres via
+      page lecteur + slugs décimaux + retry-404 + schéma CDN haché). DB sauvegardée.
+
 ## 2026-09-20 — Android : prefetch réel + version visible (android 1.9.2/63)
 
 - [x] Préchargement lecteur webtoon RÉEL : le prefetch précédent (fichiers seulement)

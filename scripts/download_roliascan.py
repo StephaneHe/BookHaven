@@ -52,8 +52,8 @@ CDN_REFERER = "https://roliascan.org/"          # required or the CDN blocks the
 SITE = "https://roliascan.com"
 CDN = "https://roliascan.org/storage/chapters/manhwa_{mid}_{key}/{fn}"
 STRIP_STEP = 15                                  # stitched strips are indexed 1,16,31,46,...
-RETRIES = 5
-PAGE_DELAY = 0.3
+RETRIES = 8            # generous: the site is unstable
+PAGE_DELAY = 0.15
 PAGED_END_AFTER_MISSES = 2
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp")
 AD_MD5 = "ed6d7bf6aa"                             # recurring 728x90 GIF ad (mislabelled .jpg)
@@ -80,19 +80,24 @@ def _open(url, referer):
     return urllib.request.urlopen(req, timeout=30)
 
 
-def http_bytes(url, referer=CDN_REFERER, retries=RETRIES):
-    """Return (bytes|None, status) with status in {'ok','404','err'}; retries transient."""
+def http_bytes(url, referer=CDN_REFERER, retries=RETRIES, retry_404=False):
+    """Return (bytes|None, status) with status in {'ok','404','err'}; retries transient.
+
+    retry_404: keep retrying even on HTTP 404. Use it for images the AUTHORITATIVE
+    chapter list says exist — a 404 there is a transient CDN hiccup, not a real
+    absence (the site is unstable).
+    """
     for a in range(retries):
         try:
             with _open(url, referer) as r:
                 data = r.read()
-            return (data if data and len(data) > 500 else None), ("ok" if data else "err")
+            return (data if data and len(data) > 200 else None), ("ok" if data else "err")
         except urllib.error.HTTPError as e:
-            if e.code == 404:
+            if e.code == 404 and not retry_404:
                 return None, "404"
-            time.sleep(1.0 * (a + 1) + random.random())
+            time.sleep(1.5 * (a + 1) + random.random())
         except Exception:
-            time.sleep(1.0 * (a + 1) + random.random())
+            time.sleep(1.5 * (a + 1) + random.random())
     return None, "err"
 
 
@@ -129,18 +134,40 @@ def discover(series_url_or_slug):
     title = re.sub(r"^Chapter\s+[0-9.]+\s*[-–]\s*", "", title).strip()  # strip stray "Chapter N - "
     if not title or title.lower().startswith("chapter"):
         title = slug.replace("-", " ").title()
-    # all chapter slugs ch<num>-<postid> (num may be decimal)
-    chaps = {}
-    for _full, num, pid in re.findall(r"(ch([0-9.]+)-(\d+))", html):
-        chaps[num] = pid
+    cover_m = re.search(r'data-manga-cover="([^"]+)"', html) \
+        or re.search(r'<meta property="og:image" content="([^"]+)"', html)
+    cover = cover_m.group(1) if cover_m else None
+
+    # Chapter list. The series page usually JS-loads it (only ~1 slug in static HTML);
+    # the READER page embeds the full chapter dropdown, so fall back to it.
+    chaps = _parse_chapter_slugs(html, read_slug)
+    if len(chaps) < 2:
+        seed = re.search(rf"/read/{re.escape(read_slug)}/(ch[0-9a-z.\-]+?)/", html)
+        if seed:
+            rhtml = http_text(f"{SITE}/read/{read_slug}/{seed.group(1)}/")
+            chaps = _parse_chapter_slugs(rhtml, read_slug) or chaps
     chapters = sorted(chaps.items(), key=lambda kv: float(kv[0]))
     disc = {"slug": slug, "manga_id": manga_id, "read_slug": read_slug,
-            "title": title, "chapters": [(n, p) for n, p in chapters]}
+            "title": title, "cover": cover, "chapters": [(n, p) for n, p in chapters]}
     log(f"Discovered '{title}' (manga_id={manga_id}, read_slug={read_slug}): "
-        f"{len(chapters)} chapters")
+        f"{len(chapters)} chapters, cover={'yes' if cover else 'no'}")
     if any("." in n for n, _ in chapters):
         flag("decimal-chapter", "series contains decimal chapters (e.g. NNN.5) — check ordering")
     return disc
+
+
+def _parse_chapter_slugs(html, read_slug):
+    """Parse chapter slugs -> {num: postid}. Handles chN-<pid> and decimal
+    chWhole-Frac-<pid> (e.g. ch172-5-248791 -> 172.5)."""
+    chaps = {}
+    for slug in re.findall(rf"/read/{re.escape(read_slug)}/(ch[0-9a-z.\-]+?)/", html):
+        m = re.fullmatch(r"ch(\d+)(?:-(\d+))?-(\d+)", slug)
+        if not m:
+            continue
+        whole, frac, pid = m.group(1), m.group(2), m.group(3)
+        num = f"{whole}.{frac}" if frac else whole
+        chaps.setdefault(num, pid)
+    return chaps
 
 
 def og_folder(read_slug, chapter_slug):
@@ -261,7 +288,8 @@ def process_chapter(postid, chdir, plan):
             _d, st = http_bytes(url, referer=CDN_REFERER)   # existence only, no save
             (present if st == "ok" else missing).append(fn)
             time.sleep(PAGE_DELAY); continue
-        data, st = http_bytes(url, referer=CDN_REFERER)
+        # retry_404: this URL is in the authoritative list -> a 404 is transient.
+        data, st = http_bytes(url, referer=CDN_REFERER, retry_404=True)
         if data and is_ad_gif(data):
             ads.append(fn); time.sleep(PAGE_DELAY); continue
         if data and valid_image_bytes(dest, data):
@@ -382,8 +410,12 @@ def main():
     out_root = os.path.join(BASE_DIR, "data", "manhua", slug)
     os.makedirs(out_root, exist_ok=True)
 
-    mode = verify_mapping(disc)
+    # No mapping guess needed: page URLs come verbatim from chapter-content (postid),
+    # so any CDN folder scheme (manhwa_<id>_N OR a hash) is handled transparently.
+    mode = "authoritative"
     chapters = disc["chapters"]
+    if not chapters:
+        raise SystemExit("No chapters discovered — check the series URL/slug.")
     if args.chapters:
         want = set(args.chapters)
         chapters = [(n, p) for n, p in chapters if n in want]

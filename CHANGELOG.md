@@ -5,6 +5,29 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.12] - 2026-09-21
+
+### Added
+- **Nouveau manhua « Webtoon Character Na Kang Lim » intégré** (catégorie
+  **Webcomics**, lecture verticale continue). 173 chapitres, **8018 pages**,
+  **0 manquante / 0 tronquée** (vérif exhaustive via l'endpoint autoritatif ;
+  intégrité PIL 0 bad). Couverture officielle roliascan (og:image), enregistré
+  comme un seul livre (id 39573, `content_version` posé). CBZ 954 Mo. Le chapitre
+  décimal **172.5** (2 pages, réel/bonus) s'ordonne correctement en dernier
+  (préfixe `01725`). Visible immédiatement sur 8097 (DB lue à chaud).
+
+### Fixed
+- **`download_roliascan.py` généralisé** pour les séries où la page série
+  JS-charge la liste des chapitres (récupère la liste complète depuis la **page
+  lecteur**) et pour les **slugs décimaux** (`chN-M-<postid>` → N.M). Retries plus
+  généreux (8) + **retry sur 404** pour les images de la liste autoritative
+  (404 = hoquet transitoire du CDN instable). Gère un **schéma CDN différent**
+  (dossier haché, noms `001.webp`) sans hypothèse, via l'endpoint autoritatif.
+
+### Changed
+- **`__version__` 2.7.11 → 2.7.12.** ⚠️ **Redémarrage Flask requis** (reflet
+  version ; le livre est déjà visible sans redémarrage).
+
 ## [2.7.11] - 2026-09-19
 
 ### Fixed
