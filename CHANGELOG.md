@@ -5,6 +5,25 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.15] - 2026-09-21
+
+### Fixed
+- **Lecteur web DESKTOP : vraie colonne bornée (le fix 2.7.14 était insuffisant).**
+  Les 64 px de gouttières de 2.7.14 laissaient l'image à ~quasi 100 % sur un écran
+  1920/2560 px (identique au mobile). Désormais, sur desktop (`@media
+  min-width:769px`), la colonne de lecture est **plafonnée à `--comic-col-w` (900 px),
+  centrée** (`margin:auto`) pour le lecteur **continu** (`#comic-scroll`) **et**
+  paginé (`#comic-img`) → **marges latérales réelles** (place pour la navigation).
+  **Vérifié par RENDU réel** (Playwright + Chrome, session authentifiée, lecteur
+  manhua live) : à **1600 px → image 900 px (56 %, marges 350 px)** ; à **390 px →
+  image 390 px (100 %, inchangé)**. Le web mobile (≤768 px) et l'**app Android** ne
+  changent pas.
+- **Cache-busting** : la page `/` (CSS/JS inline) est servie en `Cache-Control:
+  no-cache` → un simple reload revalide et prend les changements CSS sans Ctrl+F5.
+
+### Changed
+- **`__version__` 2.7.14 → 2.7.15.** ⚠️ **Redémarrage Flask requis.**
+
 ## [2.7.14] - 2026-09-21
 
 ### Fixed

@@ -25,7 +25,7 @@ class BookNotFound(Exception):
 
 from flask import (
     Flask, request, jsonify, send_file, send_from_directory,
-    render_template, session, abort, Response
+    render_template, session, abort, Response, make_response
 )
 
 try:
@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.7.14"
+__version__ = "2.7.15"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -2636,7 +2636,13 @@ def api_upload_cancel():
 
 @app.route("/")
 def index():
-    return render_template("index.html", version=__version__)
+    # The reader CSS/JS is inline in index.html, so version it via no-cache: the
+    # browser revalidates the page each load (ETag/304 when unchanged) and picks up
+    # CSS changes on a plain reload — no Ctrl+F5 needed. The current __version__ is
+    # exposed for cache-busting of any versioned asset URLs.
+    resp = make_response(render_template("index.html", version=__version__))
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
 
 
 @app.route("/api/version")

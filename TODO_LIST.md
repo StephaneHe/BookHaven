@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-21 — Lecteur desktop : vraie colonne bornée + vérif rendu (web 2.7.15)
+
+- [x] Fix 2.7.14 (64px gouttières) insuffisant (~plein largeur sur 1920). Vraie colonne
+      centrée plafonnée `--comic-col-w=900px` sur desktop (`@media min-width:769px`) pour
+      `#comic-scroll` (continu) + `#comic-img` (paginé). **Vérifié RENDU** Playwright+Chrome
+      (auth) : 1600px→img 900px (56%, marges 350px) ; 390px→100% inchangé. Mobile/app
+      inchangés. Cache-busting : `/` en `Cache-Control: no-cache`. `templates/index.html`.
+
 ## 2026-09-21 — Fix régression lecteur web desktop (web 2.7.14)
 
 - [x] Desktop reader manhua remis **borné** (gouttières boutons nav) au lieu de 100 %

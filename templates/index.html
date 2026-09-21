@@ -648,14 +648,17 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 #comic-container.continuous > .comic-nav { display: none; }
 #comic-container.continuous > #comic-scroll { display: block; }
 #comic-scroll img { display: block; margin: 0 auto; width: var(--comic-zoom); height: auto; }
-/* DESKTOP regression fix: on PC the continuous manhua/webtoon reader must stay
-   BOUNDED by the nav-button gutters (as the paged reader has since v2.5.3 / dea4083),
-   NOT full screen width. The continuous mode (v2.7.0 / 80c400a) had zeroed those
-   gutters for all viewports, so desktop looked like mobile. Mobile web (<=768px)
-   keeps the full-width layout (rule above); this only re-adds the gutters on wide
-   screens, leaving room on the sides for navigation. */
+/* DESKTOP layout: a BOUNDED, centred reading column (not full screen width) with
+   real side margins where the prev/next navigation lives. The continuous webtoon
+   reader (v2.7.0) filled 100% width on every viewport; 64px nav-gutters (v2.7.14)
+   were still ~full width on a 1920/2560px screen. So on wide screens we cap the
+   reading column to --comic-col-w (centred) for BOTH the continuous and paged
+   readers. Mobile web (<=768px) keeps the full-width layout above; the Android app
+   is unaffected (native reader). */
+#comic-container { --comic-col-w: 900px; }
 @media (min-width: 769px) {
-  #comic-container.continuous { padding-left: var(--comic-nav-w); padding-right: var(--comic-nav-w); }
+  #comic-container.continuous > #comic-scroll { max-width: var(--comic-col-w); margin-left: auto; margin-right: auto; }
+  #comic-container > #comic-img { max-width: var(--comic-col-w); }
 }
 .next-chapter-btn {
   display: block; margin: 18px auto 40px; padding: 10px 26px;
