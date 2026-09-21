@@ -5,6 +5,20 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.14] - 2026-09-21
+
+### Fixed
+- **Régression lecteur web DESKTOP (manhua/webtoon en pleine largeur).** Le lecteur
+  vertical continu (v2.7.0, `80c400a`) mettait `#comic-container.continuous
+  { padding: 0 }` sur **tous** les écrans, supprimant les gouttières des boutons de
+  nav que le mode paginé avait depuis v2.5.3 (`dea4083`, « fill area BETWEEN nav
+  buttons »). Sur PC le manhua s'affichait donc en 100 % largeur comme sur mobile.
+  **Correction desktop-only** (`@media (min-width: 769px)`) : les gouttières
+  `--comic-nav-w` sont ré-appliquées au lecteur continu sur grand écran → largeur
+  **bornée par les boutons**, place réservée pour la navigation. **Le web mobile
+  (≤768 px) et l'app Android ne changent pas** (rendu plein/continu conservé).
+  Template rechargé à chaud ; ⚠️ redémarrage Flask pour le reflet de version.
+
 ## [2.7.13] - 2026-09-21
 
 ### Changed

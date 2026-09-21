@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-21 — Fix régression lecteur web desktop (web 2.7.14)
+
+- [x] Desktop reader manhua remis **borné** (gouttières boutons nav) au lieu de 100 %
+      largeur. Cause : `#comic-container.continuous { padding:0 }` (v2.7.0/80c400a)
+      sans breakpoint desktop, écrasant le bounding paginé (v2.5.3/dea4083). Fix
+      desktop-only `@media (min-width:769px)` ré-ajoute `--comic-nav-w`. Mobile web
+      (≤768px) + app Android INCHANGÉS. `templates/index.html:651`.
+
 ## 2026-09-21 — Préchargement manhua « 1 chapitre en avance » (web 2.7.13 + android 1.9.3/64)
 
 - [x] **Android** : boucle de préchargement continue (fichiers seulement, cache LRU
