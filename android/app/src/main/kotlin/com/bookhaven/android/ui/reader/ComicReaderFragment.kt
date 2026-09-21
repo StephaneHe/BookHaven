@@ -24,6 +24,8 @@ import com.bookhaven.android.databinding.FragmentComicReaderBinding
 import com.bookhaven.android.ui.common.showError
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
@@ -61,6 +63,7 @@ class ComicReaderFragment : Fragment() {
         private const val ZOOM_MIN = 40
         private const val ZOOM_MAX = 400
         private const val ZOOM_STEP = 15
+        private const val MAX_PREFETCH = 200   // safety cap on plates warmed ahead (files only)
 
         fun newInstance(bookId: Int, serverUrl: String, localPath: String?) =
             ComicReaderFragment().apply {
@@ -208,7 +211,9 @@ class ComicReaderFragment : Fragment() {
         setupPinchZoom()
         setupScrollTracking()
 
+        readAnchor = startPlate
         renderChapter(chapterOfPlate(startPlate), startPlate)
+        startPrefetchLoop()      // warm up to one chapter ahead as the user reads
     }
 
     private fun buildChapters(pages: List<String>): List<Chapter> {
@@ -282,7 +287,8 @@ class ComicReaderFragment : Fragment() {
         b.comicProgressBar.progress = ((globalIdx + 1).toFloat() / totalPages * 100f).toInt()
     }
 
-    private val prefetchedChapters = HashSet<Int>()
+    @Volatile private var readAnchor = 0     // global index of the top-visible plate
+    private var prefetchLoop: Job? = null
 
     private fun setupScrollTracking() {
         b.rvContinuous.addOnScrollListener(object : RecyclerView.OnScrollListener() {
@@ -291,23 +297,41 @@ class ComicReaderFragment : Fragment() {
                 val pos = lm.findFirstVisibleItemPosition()
                 val adapter = rv.adapter as? ContinuousComicAdapter ?: return
                 val globalIdx = adapter.globalIndexAt(pos) ?: return
+                readAnchor = globalIdx           // drives the prefetch loop
                 updateIndicator(globalIdx)
                 val pct = (globalIdx + 1).toFloat() / totalPages * 100f
                 viewLifecycleOwner.lifecycleScope.launch {
                     downloadRepo.saveProgress(bookId, globalIdx.toString(), pct)
                 }
-                // Near the end of the chapter → warm the NEXT chapter's first plates
-                // so the chapter transition is instant (bounded, files only).
-                val chap = chapters.getOrNull(chapterIdx) ?: return
-                val next = chapters.getOrNull(chapterIdx + 1) ?: return
-                if (lm.findLastVisibleItemPosition() >= chap.idxs.size - 2 &&
-                    prefetchedChapters.add(chapterIdx + 1)) {
-                    next.idxs.take(2).forEach { gi ->
-                        viewLifecycleOwner.lifecycleScope.launch { source.pageFile(gi) }
-                    }
-                }
             }
         })
+    }
+
+    /**
+     * Continuous, memory-safe "one chapter ahead" prefetch: repeatedly warm the LRU
+     * DISK cache (files only — no bitmap decode) with the rest of the current chapter
+     * plus the ENTIRE next chapter, ahead of the reading position. Sequential (no
+     * request storm), skips already-cached files, and re-computes from the latest
+     * position each sweep so it always stays ahead. Bounded by MAX_PREFETCH and the
+     * 500 MB LRU cache; SSIV decode is handled separately by PrefetchLayoutManager.
+     */
+    private fun startPrefetchLoop() {
+        prefetchLoop?.cancel()
+        prefetchLoop = viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            while (isActive) {
+                val anchor = readAnchor
+                val ci = chapterOfPlate(anchor)
+                val targets = ArrayList<Int>()
+                chapters.getOrNull(ci)?.idxs?.filterTo(targets) { it > anchor }   // rest of current chapter
+                chapters.getOrNull(ci + 1)?.idxs?.let { targets.addAll(it) }       // entire next chapter
+                for (gi in targets.take(MAX_PREFETCH)) {
+                    if (!isActive) break
+                    if (kotlin.math.abs(readAnchor - anchor) > 3) break            // moved a lot → recompute
+                    source.pageFile(gi)                                            // no-op if already cached
+                }
+                kotlinx.coroutines.delay(400)                                      // polite idle between sweeps
+            }
+        }
     }
 
     // Pinch-to-zoom: live visual scale during the gesture, baked into the real

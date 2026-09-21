@@ -2880,9 +2880,11 @@ function comicRenderChapter(chIdx, scrollToPlate) {
 
 // Prefetch for the continuous reader: pre-DECODE plates just before they scroll
 // into view (so huge webtoon strips paint instantly instead of hitching), and warm
-// the NEXT chapter's first plates on idle for a seamless chapter transition. Bounded
-// (rootMargin ~1.5 screens ahead, 3 next-chapter plates) so memory/network stay flat.
+// the ENTIRE NEXT chapter on idle — the current chapter's plates are already in the
+// DOM, so this keeps ~1 full chapter cached ahead of the reading position. Chained
+// one image per idle callback (no request burst); the browser bounds the cache.
 let _comicObserver = null;
+let _comicWarmToken = 0;
 function _comicSetupPrefetch(chIdx, chaps, bookId) {
   if (_comicObserver) { _comicObserver.disconnect(); _comicObserver = null; }
   const container = document.getElementById('comic-container');
@@ -2900,11 +2902,16 @@ function _comicSetupPrefetch(chIdx, chaps, bookId) {
   }
   const next = chaps[chIdx + 1];
   if (next) {
-    const warm = () => next.idxs.slice(0, 3).forEach(i => {
-      const im = new Image(); im.src = `/api/books/${bookId}/comic-page/${i}`;
-    });
-    if (typeof requestIdleCallback !== 'undefined') requestIdleCallback(warm, { timeout: 2000 });
-    else setTimeout(warm, 300);
+    const token = ++_comicWarmToken;        // cancels a previous chapter's warm-up
+    const idle = (fn) => (typeof requestIdleCallback !== 'undefined')
+      ? requestIdleCallback(fn, { timeout: 1500 }) : setTimeout(fn, 120);
+    let k = 0;
+    const warmNext = () => {
+      if (token !== _comicWarmToken || k >= next.idxs.length) return;   // moved on / done
+      const im = new Image(); im.src = `/api/books/${bookId}/comic-page/${next.idxs[k++]}`;
+      idle(warmNext);                        // one image per idle tick → no burst
+    };
+    idle(warmNext);
   }
 }
 

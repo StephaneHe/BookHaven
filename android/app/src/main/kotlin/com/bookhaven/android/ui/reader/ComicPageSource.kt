@@ -104,5 +104,7 @@ class ComicPageSource(
         }
     }
 
-    companion object { private const val MAX_CACHE_BYTES = 300L * 1024 * 1024 }
+    // 500 MB LRU: comfortably holds ~1 chapter prefetched ahead + recently-read plates
+    // for the heaviest manhua (tall stitched strips), while staying bounded.
+    companion object { private const val MAX_CACHE_BYTES = 500L * 1024 * 1024 }
 }

@@ -1,5 +1,22 @@
 # Changelog — BookHaven Android
 
+## [1.9.3] - 2026-09-21
+
+### Changed
+- **Préchargement manhua « un chapitre en avance ».** Avant : seulement ~3 planches
+  suivantes + les 2 premières du chapitre suivant. Maintenant : une **boucle de
+  préchargement continue** réchauffe le **cache disque LRU** (fichiers seulement —
+  **aucun bitmap décodé**, donc pas d'OOM) avec le **reste du chapitre courant +
+  le chapitre suivant ENTIER**, en avance de la position de lecture. Séquentielle
+  (pas de tempête de requêtes), saute ce qui est déjà en cache, recalcule depuis la
+  dernière position à chaque passe (reste toujours devant). Cache LRU **300 → 500 Mo**
+  (garde ~1 chapitre d'avance + le lu récent, borné ; évacue le loin-derrière). Le
+  décodage anticipé (PrefetchLayoutManager ~2 écrans) est conservé. `ComicReaderFragment`
+  + `ComicPageSource`.
+
+### Changed
+- versionCode 64, versionName 1.9.3.
+
 ## [1.9.2] - 2026-09-20
 
 ### Fixed

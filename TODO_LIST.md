@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-21 — Préchargement manhua « 1 chapitre en avance » (web 2.7.13 + android 1.9.3/64)
+
+- [x] **Android** : boucle de préchargement continue (fichiers seulement, cache LRU
+      300→500 Mo) = reste du chapitre courant + chapitre suivant ENTIER, séquentielle,
+      recalculée depuis la position, saute le déjà-caché, borné (pas d'OOM). Décodage
+      anticipé (PrefetchLayoutManager) conservé. **Web** : prefetch du chapitre suivant
+      ENTIER enchaîné sur requestIdleCallback (au lieu de 3 planches). APK buildé.
+
 ## 2026-09-21 — Intégration manhua « Webtoon Character Na Kang Lim » (web 2.7.12)
 
 - [x] 173 ch / **8018 pages, 0 manquante** (vérif exhaustive endpoint autoritatif ;

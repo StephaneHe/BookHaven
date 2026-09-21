@@ -5,6 +5,18 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.13] - 2026-09-21
+
+### Changed
+- **Préchargement manhua « jusqu'à un chapitre en avance » (web).** Le lecteur
+  continu préchargeait seulement les 3 premières planches du chapitre suivant ;
+  il précharge désormais **le chapitre suivant ENTIER** (le chapitre courant est
+  déjà dans le DOM), enchaîné **une image par `requestIdleCallback`** (pas de
+  rafale) → ~1 chapitre complet en cache devant la position de lecture, transition
+  inter-chapitres instantanée. La pré-décodage des planches à l'approche (via
+  `IntersectionObserver`) est conservé. ⚠️ **Redémarrage Flask requis** (reflet
+  version ; template rechargé à chaud).
+
 ## [2.7.12] - 2026-09-21
 
 ### Added
