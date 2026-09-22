@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.7.15"
+__version__ = "2.7.16"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -416,14 +416,52 @@ def _group_format_variants(books):
 
 # ── Auth helpers ─────────────────────────────────────────────────────────────
 
+_default_user_cache = {}
+
+
+def _resolve_default_user():
+    """(id, name) of the passwordless default user (config.DEFAULT_USER, else the
+    oldest user). Cached; the cache is cleared when users change (see api delete)."""
+    if "id" in _default_user_cache:
+        return _default_user_cache["id"], _default_user_cache["name"]
+    conn = database.get_db()
+    row = conn.execute("SELECT id, name FROM users WHERE name = ?", (config.DEFAULT_USER,)).fetchone()
+    if not row:
+        row = conn.execute("SELECT id, name FROM users ORDER BY created_at LIMIT 1").fetchone()
+    conn.close()
+    if row:
+        _default_user_cache["id"] = row["id"]
+        _default_user_cache["name"] = row["name"]
+        return row["id"], row["name"]
+    return None, None
+
+
+def _ensure_session_user():
+    """Make sure a user is on the session. Returns True if one is (or was auto-set).
+
+    Passwordless entry: when login is not required, auto-select the default user so
+    the app opens straight to the library and per-user endpoints keep working.
+    """
+    if "user_id" in session:
+        return True
+    if TEST_MODE:
+        session["user_id"] = "test-user"
+        session["user_name"] = "TestUser"
+        return True
+    if not config.LOGIN_REQUIRED:
+        uid, uname = _resolve_default_user()
+        if uid:
+            session["user_id"] = uid
+            session["user_name"] = uname
+            return True
+    return False
+
+
 def login_required(f):
-    """Decorator to require authentication."""
+    """Decorator to require authentication (auto-satisfied when login is disabled)."""
     @wraps(f)
     def decorated(*args, **kwargs):
-        if TEST_MODE and "user_id" not in session:
-            session["user_id"] = "test-user"
-            session["user_name"] = "TestUser"
-        if "user_id" not in session:
+        if not _ensure_session_user():
             return jsonify({"error": "Authentication required"}), 401
         return f(*args, **kwargs)
     return decorated
@@ -553,11 +591,8 @@ def api_logout():
 
 @app.route("/api/auth/me")
 def api_me():
-    """Check current session."""
-    if TEST_MODE and "user_id" not in session:
-        session["user_id"] = "test-user"
-        session["user_name"] = "TestUser"
-    if "user_id" in session:
+    """Check current session (auto-selects the default user when login is disabled)."""
+    if _ensure_session_user() and "user_id" in session:
         return jsonify({
             "ok": True,
             "user_id": session["user_id"],

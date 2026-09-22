@@ -1,5 +1,14 @@
 # BookHaven — TODO
 
+## 2026-09-22 — Entrée sans PIN + catégorie Cuisine (web 2.7.16)
+
+- [x] **A** : entrée sans PIN/login par défaut (auto-login user par défaut « steph » ;
+      flag `BOOKHAVEN_LOGIN_REQUIRED` pour re-protéger) ; `BOOKHAVEN_PIN` (=1111) vidé ;
+      user « 1111 » supprimé (+ progression orpheline). Backup DB fait.
+- [x] **B** : Etchebest trouvé (présent disque `H:\Books\Education\`, NON indexé) → indexé
+      en catégorie **Cuisine** + autres livres cuisine (barbecue, Ducasse, Felder, Pessin).
+      Education (mixte) non entièrement importé (hors périmètre). App Android : PIN séparé ? à vérifier.
+
 ## 2026-09-21 — Lecteur desktop : vraie colonne bornée + vérif rendu (web 2.7.15)
 
 - [x] Fix 2.7.14 (64px gouttières) insuffisant (~plein largeur sur 1920). Vraie colonne

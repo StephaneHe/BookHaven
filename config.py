@@ -65,6 +65,13 @@ MAX_UPLOAD_BYTES = int(os.environ.get("BOOKHAVEN_MAX_UPLOAD_MB", "512")) * 1024 
 # Empty = disabled (current behaviour, documented trade-off).
 AUTH_PIN = os.environ.get("BOOKHAVEN_PIN", "").strip()
 
+# Passwordless entry (default). When login is NOT required, BookHaven opens
+# straight to the library, auto-selecting DEFAULT_USER (so per-user context like
+# reading progress still works). Set BOOKHAVEN_LOGIN_REQUIRED=1 to bring back the
+# user-selection / PIN screen.
+LOGIN_REQUIRED = os.environ.get("BOOKHAVEN_LOGIN_REQUIRED", "0").strip().lower() in ("1", "true", "yes", "on")
+DEFAULT_USER = os.environ.get("BOOKHAVEN_DEFAULT_USER", "steph").strip()
+
 # Scanner settings
 SCAN_BATCH_SIZE = 100  # commit every N books
 

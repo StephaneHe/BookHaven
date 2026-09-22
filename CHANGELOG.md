@@ -5,6 +5,32 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.7.16] - 2026-09-22
+
+### Changed
+- **Entrée sans PIN / sans login (par défaut).** L'app s'ouvre directement sur la
+  bibliothèque : quand `BOOKHAVEN_LOGIN_REQUIRED` n'est pas activé (défaut),
+  `login_required`/`/api/auth/me` **auto-sélectionnent l'utilisateur par défaut**
+  (`BOOKHAVEN_DEFAULT_USER`, défaut « steph ») pour que la progression par-profil
+  continue de marcher. `BOOKHAVEN_PIN` vidé dans `.env` (le PIN était « 1111 »).
+  Re-protéger plus tard = `BOOKHAVEN_LOGIN_REQUIRED=1` (+ éventuel `BOOKHAVEN_PIN`).
+
+### Removed
+- **Utilisateur parasite « 1111 »** supprimé (+ sa progression orpheline). Aucun
+  autre utilisateur impacté (restants : Elena, Ethan, Refael, Samuel, steph).
+
+### Added
+- **Catégorie « Cuisine »** créée et remplie. Le livre **Philippe Etchebest**
+  (« Cuisinez bien accompagné avec ma méthode Mentor ») était **présent sur disque
+  (`H:\Books\Education\`) mais non indexé** (le dossier Education n'avait jamais été
+  scanné). Indexé + classé « Cuisine », avec les autres livres de cuisine de la
+  bibliothèque (barbecue, Ducasse — desserts/pâtisseries, Felder — glaces/desserts,
+  Caroline Pessin — batch cooking, déjà en base et re-catégorisé). Les non-livres
+  de cuisine d'Education (grammaire, philo, enfants, musique, DIY) ne sont pas touchés.
+
+### Changed
+- **`__version__` 2.7.15 → 2.7.16.** ⚠️ **Redémarrage Flask requis** (entrée sans PIN).
+
 ## [2.7.15] - 2026-09-21
 
 ### Fixed
