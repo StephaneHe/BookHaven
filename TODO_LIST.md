@@ -1,5 +1,13 @@
 # BookHaven — TODO
 
+## 2026-09-22 — App Android : choix user sans PIN (android 1.9.4/65)
+
+- [x] Écran de sélection d'utilisateur conservé, étape PIN supprimée : tap sur un
+      profil → `login(user)` sans PIN → biblio (session serveur = contexte user).
+      `LoginViewModel`/`LoginFragment`/`fragment_login.xml` (champ PIN retiré, plus de
+      pinRequired/server_pin/InvalidPinException). Serveur déjà sans PIN. APK buildé.
+      À valider device.
+
 ## 2026-09-22 — Entrée sans PIN + catégorie Cuisine (web 2.7.16)
 
 - [x] **A** : entrée sans PIN/login par défaut (auto-login user par défaut « steph » ;

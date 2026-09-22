@@ -1,5 +1,22 @@
 # Changelog — BookHaven Android
 
+## [1.9.4] - 2026-09-22
+
+### Changed
+- **Écran de connexion : choix d'utilisateur CONSERVÉ, étape PIN SUPPRIMÉE.** On
+  garde la liste des profils au lancement ; taper sur un profil ouvre directement
+  la bibliothèque avec ce profil actif (session serveur → contexte utilisateur pour
+  la progression). Suppression du champ PIN et de toute validation PIN côté app
+  (`fragment_login.xml` : champ PIN retiré ; `LoginFragment` : tap → `login(user)`
+  sans PIN ; `LoginViewModel` : `login(username, offline)` appelle
+  `repo.login(username, null)`, re-login silencieux sans PIN au démarrage, plus de
+  `pinRequired`/`server_pin`/`InvalidPinException`). Le serveur est déjà sans PIN
+  (v2.7.16) ; l'app ne réintroduit aucun PIN. Changement de profil ultérieur (logout
+  → liste → tap) inchangé.
+
+### Changed
+- versionCode 65, versionName 1.9.4.
+
 ## [1.9.3] - 2026-09-21
 
 ### Changed
