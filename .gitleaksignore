@@ -1,0 +1,3 @@
+# Faux positif : chaine temoin de test (SECRET-DETAIL-c0ffee), pas un secret.
+bd0163cf6269c7739422166ebb54cf1141325c04:tests/test_error_messages.py:generic-api-key:11
+tests/test_error_messages.py:generic-api-key:13
