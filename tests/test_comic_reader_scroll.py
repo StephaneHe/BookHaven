@@ -1,4 +1,6 @@
-"""Comic reader: page changes start at the TOP; webtoon detection ignores credits/covers.
+"""Comic reader: paged mode starts every page at the TOP; webtoon mode is one
+continuous scroll with no page notion, exact scroll-position progress and
+chapter/series navigation; webtoon detection ignores credits/covers.
 
 Fake books are served through Playwright routes (ids 9000xx), so these tests do
 not depend on the local library.
@@ -19,9 +21,13 @@ BOOKS = {
     900011: [(1200, 800)] + [(400, 2400)] * 3,                # webtoon series: chapters 1..3,
     900012: [(1200, 800)] + [(400, 2400)] * 3,                # one file per chapter
     900013: [(1200, 800)] + [(400, 2400)] * 3,
+    900020: [(700, 1000)] * 4,                                # flagged webtoon, plates NOT tall
 }
 SERIES = "Fake Series"
 SERIES_BOOKS = [900011, 900012, 900013]
+WEBTOON_FLAGGED = {900020}
+PROGRESS = {}          # bid -> current_location served by the fake book detail
+PUTS = []              # progress bodies sent by the reader
 _PNG = {}
 
 
@@ -40,10 +46,22 @@ def _handler(route):
     bid, rest = int(m.group(1)), (m.group(2) or "")
     plates = BOOKS[bid]
     if rest == "":
-        body = {"id": bid, "title": f"Fake {bid}", "format": "cbz", "progress": None,
+        prev = nxt = None
+        if bid in SERIES_BOOKS:
+            i = SERIES_BOOKS.index(bid)
+            sib = lambda b: {"id": b, "title": f"Fake {b}", "format": "cbz"}  # noqa: E731
+            prev = sib(SERIES_BOOKS[i - 1]) if i > 0 else None
+            nxt = sib(SERIES_BOOKS[i + 1]) if i + 1 < len(SERIES_BOOKS) else None
+        loc = PROGRESS.get(bid)
+        body = {"id": bid, "title": f"Fake {bid}", "format": "cbz",
+                "progress": {"current_location": loc, "progress": 10} if loc else None,
                 "file_size": 1, "modified_at": "x",
-                "series": SERIES if bid in SERIES_BOOKS else ""}
+                "series": SERIES if bid in SERIES_BOOKS else "",
+                "webtoon": bid in WEBTOON_FLAGGED, "series_prev": prev, "series_next": nxt}
         return route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
+    if rest == "/progress" and route.request.method == "PUT":
+        PUTS.append((bid, json.loads(route.request.post_data)))
+        return route.fulfill(status=200, content_type="application/json", body="{}")
     if rest == "/comic-pages":
         pages = [f"p_{i}.png" for i in range(len(plates))]
         return route.fulfill(status=200, content_type="application/json",
@@ -56,25 +74,17 @@ def _handler(route):
     return route.fulfill(status=200, content_type="application/json", body="{}")  # progress, etc.
 
 
-def _collection_handler(route):
-    books = [{"id": b, "title": f"Fake {b}", "series_index": i + 1, "format": "cbz"}
-             for i, b in enumerate(SERIES_BOOKS)]
-    route.fulfill(status=200, content_type="application/json",
-                  body=json.dumps({"series": SERIES, "books": books, "total": len(books), "type": "books"}))
-
-
 @pytest.fixture
 def reader(request):
     page = request.getfixturevalue(request.param)
     pattern = re.compile(r".*/api/books/9000\d\d(/.*)?$")
-    coll = re.compile(r".*/api/collections/Fake%20Series$")
     page.route(pattern, _handler)
-    page.route(coll, _collection_handler)
+    PROGRESS.clear()
+    PUTS.clear()
     yield page
     page.evaluate("() => { comicZoomApply(100, false); closeReader(); }")
     page.wait_for_timeout(300)
     page.unroute(pattern)
-    page.unroute(coll)
 
 
 def _open(page, bid):
@@ -249,3 +259,106 @@ def test_continuous_mode_navigates_the_series(reader):
     assert _usable(page, "#comic-cont-prev") == "disabled"    # first book: nothing before
     page.keyboard.press("ArrowRight")
     _wait_title(page, 900012)
+
+
+# ── Webtoon mode: one continuous scroll, no page notion ───────────────────────
+def _wait_continuous(page, bid):
+    page.wait_for_function(f"() => document.getElementById('reader-title').textContent === 'Fake {bid}'"
+                           " && document.getElementById('comic-container').classList.contains('continuous')"
+                           " && [...document.querySelectorAll('#comic-scroll img')].every(i => i.complete && i.naturalHeight)",
+                           timeout=15000)
+
+
+def _scroll_pos(page):
+    return page.evaluate("() => { const p = comicReadPosition(); return p.idx + p.frac; }")
+
+
+@pytest.mark.parametrize("reader", ["desktop_page", "phone_page"], indirect=True)
+def test_webtoon_mode_has_no_page_notion(reader):
+    page = reader
+    _open(page, 900012)
+    _wait_continuous(page, 900012)
+    for sel in (".comic-nav.prev", ".comic-nav.next", "#comic-img",
+                "#comic-page-input", "#comic-page-total", "#comic-page-go"):
+        assert _usable(page, sel) == "hidden", f"{sel} must not show in webtoon mode"
+    for sel in ("#comic-cont-prev", "#comic-cont-top", "#comic-cont-next"):
+        assert _usable(page, sel) == "ok", f"{sel}: {_usable(page, sel)}"
+    # plates glued: each one starts exactly where the previous one ends
+    gaps = page.evaluate("""() => { const im = [...document.querySelectorAll('#comic-scroll img')];
+        return im.slice(1).map((e, i) => Math.round(e.getBoundingClientRect().top - im[i].getBoundingClientRect().bottom)); }""")
+    assert gaps and all(g == 0 for g in gaps), gaps
+    # a horizontal swipe flips nothing: same book, scroll position untouched
+    page.evaluate("() => { document.getElementById('comic-container').scrollTop = 500; }")
+    _swipe(page, -200)
+    _swipe(page, 200)
+    page.wait_for_timeout(200)
+    assert _title(page) == "Fake 900012"
+    assert _scroll_top(page) == 500
+
+
+@pytest.mark.parametrize("reader", ["desktop_page"], indirect=True)
+def test_server_webtoon_flag_forces_continuous_mode(reader):
+    _open(reader, 900020)             # ordinary portrait plates: detection alone says paged
+    _wait_continuous(reader, 900020)
+
+
+@pytest.mark.parametrize("reader", ["desktop_page", "phone_page"], indirect=True)
+def test_webtoon_resumes_exactly_where_left(reader):
+    page = reader
+    PROGRESS[900012] = "2.5000"        # half-way through plate 2
+    _open(page, 900012)
+    _wait_continuous(page, 900012)
+    page.wait_for_timeout(300)
+    assert abs(_scroll_pos(page) - 2.5) < 0.01
+    # old integer locations still work (top of that plate)
+    page.evaluate("() => closeReader()")
+    PROGRESS[900013] = "3"
+    _open(page, 900013)
+    _wait_continuous(page, 900013)
+    page.wait_for_timeout(300)
+    assert abs(_scroll_pos(page) - 3.0) < 0.01
+
+
+@pytest.mark.parametrize("reader", ["desktop_page", "phone_page"], indirect=True)
+def test_webtoon_saves_scroll_position_and_finishes_at_end(reader):
+    page = reader
+    _open(page, 900011)
+    _wait_continuous(page, 900011)
+    # 30 % into plate 1, then leave: that exact position is saved, not finished
+    page.evaluate("""() => { const c = document.getElementById('comic-container');
+        c.dispatchEvent(new WheelEvent('wheel', {deltaY: 100}));      // the reader scrolls
+        const el = document.querySelector('#comic-scroll img[data-idx="1"]');
+        c.scrollTop = el.offsetTop + 0.3 * el.offsetHeight; }""")
+    page.wait_for_timeout(300)
+    page.evaluate("() => closeReader()")
+    page.wait_for_timeout(300)
+    bid, body = PUTS[-1]
+    assert bid == 900011 and abs(float(body["current_location"]) - 1.3) < 0.01, PUTS[-1]
+    assert 1 <= body["progress"] < 100, PUTS[-1]
+    # reopen: back at that place; read to the end -> 100 %
+    PROGRESS[900011] = body["current_location"]
+    _open(page, 900011)
+    _wait_continuous(page, 900011)
+    page.wait_for_timeout(300)
+    assert abs(_scroll_pos(page) - 1.3) < 0.01
+    page.evaluate("""() => { const c = document.getElementById('comic-container');
+        c.dispatchEvent(new WheelEvent('wheel', {deltaY: 100})); c.scrollTop = c.scrollHeight; }""")
+    page.wait_for_timeout(400)
+    page.evaluate("() => closeReader()")
+    page.wait_for_timeout(300)
+    assert PUTS[-1][0] == 900011 and PUTS[-1][1]["progress"] == 100, PUTS[-1]
+
+
+@pytest.mark.parametrize("reader", ["desktop_page"], indirect=True)
+def test_reopening_a_finished_webtoon_keeps_it_finished(reader):
+    """Open a finished chapter (positioned on its last plate) and leave without
+    reading: the stored 100 % must not be rewritten by the restore scrolls."""
+    page = reader
+    PROGRESS[900013] = "3.2000"
+    _open(page, 900013)
+    _wait_continuous(page, 900013)
+    page.wait_for_timeout(500)
+    page.evaluate("() => closeReader()")
+    page.wait_for_timeout(300)
+    sent = [b for (bid, b) in PUTS if bid == 900013]
+    assert sent and all(b["current_location"] == "3.2000" and b["progress"] == 10 for b in sent), sent

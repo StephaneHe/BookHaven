@@ -23,7 +23,8 @@ import java.io.File
  * Webtoon (continuous vertical) reader for ONE chapter, matching the web mobile
  * reader: each plate fills the WIDTH (width = area × zoom, height = width × plate
  * ratio) and plates stack in a single vertical scroll — NO left/right page-flip,
- * NO fit-height. A footer offers "Chapitre suivant" / "— Fin —".
+ * NO fit-height, no page notion. A footer offers the next chapter / next book of
+ * the series ([footerLabel]) or "— Fin —".
  *
  * Memory (P0-B safety): plates render through SubsamplingScaleImageView, which
  * tiles/down-samples via BitmapRegionDecoder (keeps a tiny base layer + only the
@@ -34,9 +35,12 @@ class ContinuousComicAdapter(
     private val plateIndices: List<Int>,          // GLOBAL plate indices in this chapter
     private val scope: CoroutineScope,
     private val effectiveWidthPx: () -> Int,      // screen width × zoom
-    private val isLastChapter: Boolean,
-    private val onNextChapter: () -> Unit,
+    private val footerLabel: String?,             // null = end of the series ("— Fin —")
+    private val onFooterClick: () -> Unit,
     private val loadPage: suspend (Int) -> File?, // global index -> cached File
+    // Called once a plate has its REAL height (item position, px): lets the reader
+    // restore an exact scroll position inside that plate.
+    private val onPlateSized: (Int, Int) -> Unit = { _, _ -> },
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
 
     private val typePlate = 0
@@ -70,10 +74,10 @@ class ContinuousComicAdapter(
                 )
                 setBackgroundColor(Color.BLACK)
             }
-            val view: View = if (!isLastChapter) {
+            val view: View = if (footerLabel != null) {
                 Button(ctx).apply {
-                    text = "Chapitre suivant ›"
-                    setOnClickListener { onNextChapter() }
+                    text = footerLabel
+                    setOnClickListener { onFooterClick() }
                 }
             } else {
                 TextView(ctx).apply {
@@ -115,6 +119,7 @@ class ContinuousComicAdapter(
             val height = if (pw > 0) (width.toLong() * ph / pw).toInt().coerceAtLeast(1) else width
             setItemHeight(holder.ssiv, height)
             holder.ssiv.setImage(ImageSource.uri(Uri.fromFile(file)))
+            onPlateSized(position, height)
         }
         // Warm the next PREFETCH_AHEAD plates into the disk cache (files only).
         for (k in 1..PREFETCH_AHEAD) {

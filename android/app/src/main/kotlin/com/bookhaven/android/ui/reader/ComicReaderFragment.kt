@@ -1,6 +1,7 @@
 package com.bookhaven.android.ui.reader
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.BitmapFactory
 import android.os.Bundle
@@ -18,6 +19,8 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.bookhaven.android.data.api.ApiService
+import com.bookhaven.android.data.api.model.Book
+import com.bookhaven.android.data.api.model.SeriesRef
 import com.bookhaven.android.data.api.toUserMessage
 import com.bookhaven.android.data.repository.DownloadRepository
 import com.bookhaven.android.databinding.FragmentComicReaderBinding
@@ -30,6 +33,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.roundToInt
 
@@ -56,6 +60,10 @@ class ComicReaderFragment : Fragment() {
     private var chapters: List<Chapter> = emptyList()
     private var chapterIdx = 0
     private var zoomPct = 100
+    private var detail: Book? = null              // server book detail (webtoon flag, series neighbours)
+    // Exact position to restore once the target plate has its real height:
+    // (item position in the chapter, fraction 0..1 into that plate).
+    private var pendingRestore: Pair<Int, Float>? = null
 
     private data class Chapter(val key: String, val num: Double, val idxs: List<Int>)
 
@@ -114,6 +122,7 @@ class ComicReaderFragment : Fragment() {
                 val stored = downloadRepo.getDownload(bookId)?.contentVersion ?: ""
                 contentVersion = stored
                 val fresh = withContext(Dispatchers.IO) { runCatching { api.getBookDetail(bookId) }.getOrNull() }
+                detail = fresh
                 val serverVer = fresh?.contentVersion.orEmpty()
                 if (fresh != null && serverVer.isNotBlank() && serverVer != stored) {
                     if (confirmUpdate()) {
@@ -133,6 +142,7 @@ class ComicReaderFragment : Fragment() {
                 }
             } else {
                 val resp = withContext(Dispatchers.IO) { runCatching { api.getComicPages(bookId) }.getOrNull() }
+                detail = withContext(Dispatchers.IO) { runCatching { api.getBookDetail(bookId) }.getOrNull() }
                 contentVersion = resp?.contentVersion.orEmpty()
                 names = resp?.pages
             }
@@ -154,14 +164,17 @@ class ComicReaderFragment : Fragment() {
             }
 
             b.comicProgressBar.max = 100
-            val startPage = (downloadRepo.resolveProgress(bookId)?.position?.toIntOrNull() ?: 0)
-                .coerceIn(0, totalPages - 1)
+            // A plate index (paged) or "plate.fraction" (webtoon scroll position, as the web).
+            val startValue = downloadRepo.resolveProgress(bookId)?.position?.toDoubleOrNull() ?: 0.0
+            val startPage = startValue.toInt().coerceIn(0, totalPages - 1)
+            val startFrac = (startValue - startValue.toInt()).toFloat().coerceIn(0f, 0.9999f)
 
-            // Manhua/webtoon (tall first plate) -> continuous vertical reader like the
-            // web; normal comics keep the paged horizontal flip.
-            val isWebtoon = withContext(Dispatchers.IO) { detectWebtoon() }
+            // Manhua / manhwa / webtoon -> ONE continuous vertical scroll, no page notion.
+            // The server flag (series/category) is authoritative so such a book never
+            // falls back to the paged reader; detection covers unflagged/offline books.
+            val isWebtoon = detail?.webtoon == true || withContext(Dispatchers.IO) { detectWebtoon() }
             if (isWebtoon) {
-                setupContinuous(startPage)
+                setupContinuous(startPage, startFrac)
             } else {
                 setupPaged(startPage)
             }
@@ -209,10 +222,11 @@ class ComicReaderFragment : Fragment() {
     }
 
     // ── Continuous (webtoon) mode ───────────────────────────────────────────────
-    private suspend fun setupContinuous(startPlate: Int) {
+    private suspend fun setupContinuous(startPlate: Int, startFrac: Float = 0f) {
         b.viewPager.visibility = View.GONE
         b.hScroll.visibility = View.VISIBLE
         b.llTopControls.visibility = View.VISIBLE
+        b.tvPageNum.visibility = View.GONE          // webtoon: no "page X / N"
 
         chapters = buildChapters(source.pageNames())
         // Extra layout space below the viewport so RecyclerView binds (and SSIV starts
@@ -229,15 +243,17 @@ class ComicReaderFragment : Fragment() {
         b.btnZoomIn.setOnClickListener { setZoom(zoomPct + ZOOM_STEP) }
         b.btnZoomOut.setOnClickListener { setZoom(zoomPct - ZOOM_STEP) }
         b.tvZoom.setOnClickListener { setZoom(100) }                 // tap label = reset (fit width)
-        b.btnChapterPrev.setOnClickListener { renderChapter(chapterIdx - 1, null) }
-        b.btnChapterNext.setOnClickListener { renderChapter(chapterIdx + 1, null) }
+        b.btnChapterPrev.setOnClickListener { chapterStep(-1) }
+        b.btnChapterNext.setOnClickListener { chapterStep(1) }
         b.tvChapter.setOnClickListener { showChapterPicker() }
 
         setupPinchZoom()
         setupScrollTracking()
 
         readAnchor = startPlate
-        renderChapter(chapterOfPlate(startPlate), startPlate)
+        // Initial render restores the stored position: do not re-save it (a finished
+        // book would drop from 100 % to the % of its last plate's top).
+        renderChapter(chapterOfPlate(startPlate), startPlate, startFrac, save = false)
         startPrefetchLoop()      // warm up to one chapter ahead as the user reads
     }
 
@@ -271,28 +287,80 @@ class ComicReaderFragment : Fragment() {
         return (screen * zoomPct / 100).coerceAtLeast(1)
     }
 
-    private fun renderChapter(index: Int, scrollToPlate: Int?) {
+    private fun renderChapter(index: Int, scrollToPlate: Int?, frac: Float = 0f, save: Boolean = true) {
         if (chapters.isEmpty()) return
         chapterIdx = index.coerceIn(0, chapters.size - 1)
         val chap = chapters[chapterIdx]
+        val isLast = chapterIdx >= chapters.size - 1
+        val next = detail?.seriesNext
+        val lm = b.rvContinuous.layoutManager as LinearLayoutManager
         val adapter = ContinuousComicAdapter(
             plateIndices = chap.idxs,
             scope = viewLifecycleOwner.lifecycleScope,
             effectiveWidthPx = ::effectiveWidthPx,
-            isLastChapter = chapterIdx >= chapters.size - 1,
-            onNextChapter = { renderChapter(chapterIdx + 1, null) },
+            footerLabel = when {
+                !isLast -> "Chapitre suivant ›"
+                next != null -> "Suivant : ${next.title} ›"
+                else -> null
+            },
+            onFooterClick = { chapterStep(1) },
             loadPage = { source.pageFile(it) },
+            onPlateSized = { pos, height ->
+                pendingRestore?.let { (p, f) ->
+                    if (p == pos) {
+                        lm.scrollToPositionWithOffset(p, -(f * height).toInt())
+                        pendingRestore = null
+                    }
+                }
+            },
         )
         b.rvContinuous.layoutParams = b.rvContinuous.layoutParams.apply { width = effectiveWidthPx() }
         b.rvContinuous.adapter = adapter
         val chapLabel = if (chap.num % 1.0 == 0.0) chap.num.toInt().toString() else chap.num.toString()
-        b.tvChapter.text = "Ch. $chapLabel  (${chapterIdx + 1}/${chapters.size})"
+        // One chapter per file (scanlated webtoons, tomes): show the book title, the
+        // ‹ › buttons then move through the series.
+        b.tvChapter.text = if (chapters.size > 1) "Ch. $chapLabel  (${chapterIdx + 1}/${chapters.size})"
+                           else detail?.title ?: "Ch. $chapLabel"
 
-        val target = scrollToPlate ?: chap.idxs.firstOrNull() ?: 0
+        val target = scrollToPlate?.takeIf { it in chap.idxs } ?: chap.idxs.firstOrNull() ?: 0
         val posInChapter = chap.idxs.indexOf(target).coerceAtLeast(0)
-        (b.rvContinuous.layoutManager as LinearLayoutManager)
-            .scrollToPositionWithOffset(posInChapter, 0)
-        updateIndicator(target)
+        val f = if (scrollToPlate == target) frac else 0f
+        pendingRestore = if (f > 0f) posInChapter to f else null
+        lm.scrollToPositionWithOffset(posInChapter, 0)
+        if (save) saveScrollProgress(target, f, finished = false)
+    }
+
+    /** Previous/next chapter of this file, then previous/next book of the series. */
+    private fun chapterStep(dir: Int) {
+        val target = chapterIdx + dir
+        if (target in chapters.indices) { renderChapter(target, null); return }
+        val sib = if (dir < 0) detail?.seriesPrev else detail?.seriesNext
+        sib?.let { openSeriesBook(it) }
+    }
+
+    private fun openSeriesBook(ref: SeriesRef) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            val local = withContext(Dispatchers.IO) { downloadRepo.getDownload(ref.id) }
+            startActivity(Intent(requireContext(), ReaderActivity::class.java).apply {
+                putExtra(ReaderActivity.EXTRA_BOOK_ID, ref.id)
+                putExtra(ReaderActivity.EXTRA_FORMAT, ref.format)
+                putExtra(ReaderActivity.EXTRA_TITLE, ref.title)
+                local?.let { putExtra(ReaderActivity.EXTRA_LOCAL_PATH, it.localPath) }
+            })
+            requireActivity().finish()
+        }
+    }
+
+    /** Webtoon progress = exact scroll position "plate.fraction" + %, 100 only at the end. */
+    private fun saveScrollProgress(globalIdx: Int, frac: Float, finished: Boolean) {
+        val v = globalIdx + frac.toDouble()
+        val pct = if (finished) 100f
+                  else (v / totalPages * 100).toFloat().coerceIn(1f, 99f).toInt().toFloat()
+        b.comicProgressBar.progress = pct.toInt()
+        val location = String.format(Locale.US, "%.4f", v)
+        viewLifecycleOwner.lifecycleScope.launch {
+            downloadRepo.saveProgress(bookId, location, pct)
+        }
     }
 
     private fun showChapterPicker() {
@@ -307,27 +375,30 @@ class ComicReaderFragment : Fragment() {
             .show()
     }
 
-    private fun updateIndicator(globalIdx: Int) {
-        b.tvPageNum.text = "${globalIdx + 1} / $totalPages"
-        b.comicProgressBar.progress = ((globalIdx + 1).toFloat() / totalPages * 100f).toInt()
-    }
-
     @Volatile private var readAnchor = 0     // global index of the top-visible plate
     private var prefetchLoop: Job? = null
 
     private fun setupScrollTracking() {
         b.rvContinuous.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+            override fun onScrollStateChanged(rv: RecyclerView, newState: Int) {
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) pendingRestore = null   // user took over
+            }
+
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+                if (pendingRestore != null) return          // still placing the restored position
+                if (dx == 0 && dy == 0) return              // layout pass / programmatic jump, not reading
                 val lm = rv.layoutManager as? LinearLayoutManager ?: return
-                val pos = lm.findFirstVisibleItemPosition()
                 val adapter = rv.adapter as? ContinuousComicAdapter ?: return
-                val globalIdx = adapter.globalIndexAt(pos) ?: return
+                val pos = lm.findFirstVisibleItemPosition()
+                if (pos == RecyclerView.NO_POSITION) return
+                val globalIdx = adapter.globalIndexAt(pos)
+                    ?: adapter.globalIndexAt(adapter.itemCount - 2) ?: return   // footer: last plate
+                val view = lm.findViewByPosition(pos)
+                val frac = if (adapter.globalIndexAt(pos) == null || view == null || view.height <= 0) 0.9999f
+                           else (-view.top.toFloat() / view.height).coerceIn(0f, 0.9999f)
                 readAnchor = globalIdx           // drives the prefetch loop
-                updateIndicator(globalIdx)
-                val pct = (globalIdx + 1).toFloat() / totalPages * 100f
-                viewLifecycleOwner.lifecycleScope.launch {
-                    downloadRepo.saveProgress(bookId, globalIdx.toString(), pct)
-                }
+                val finished = chapterIdx >= chapters.size - 1 && !rv.canScrollVertically(1)
+                saveScrollProgress(globalIdx, frac, finished)
             }
         })
     }

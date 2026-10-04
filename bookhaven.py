@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.8.4"
+__version__ = "2.9.0"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -743,6 +743,8 @@ def api_book_detail(book_id):
 
         result = dict(book)
         result["content_version"] = _content_version(result.get("file_size"), result.get("modified_at"))
+        result["webtoon"] = _is_webtoon(conn, result)
+        result["series_prev"], result["series_next"] = _series_siblings(conn, result)
 
         # Get user's reading progress
         progress = conn.execute(
@@ -759,6 +761,48 @@ def api_book_detail(book_id):
     except Exception as e:
         logger.error(f"Error in api_book_detail: {e}\n{traceback.format_exc()}")
         return jsonify({"error": "Internal server error"}), 500
+
+
+WEBTOON_CATEGORIES = {"webcomics"}
+
+
+def _is_webtoon(conn, book):
+    """Manhua / manhwa / webtoon: always read as ONE continuous vertical scroll.
+
+    True when the book is flagged (reading_mode = 'webtoon'), sits in a webtoon
+    category, or belongs to a series with a flagged book (new chapters of a
+    flagged series inherit it). Readers fall back to image detection otherwise.
+    """
+    if book.get("format") not in ("cbz", "cbr"):
+        return False
+    if (book.get("reading_mode") or "") == "webtoon":
+        return True
+    if (book.get("category") or "").lower() in WEBTOON_CATEGORIES:
+        return True
+    series = book.get("series") or ""
+    return bool(series) and conn.execute(
+        "SELECT 1 FROM books WHERE series = ? AND reading_mode = 'webtoon' LIMIT 1",
+        (series,)).fetchone() is not None
+
+
+def _series_siblings(conn, book):
+    """(previous, next) book of the same series and sub-collection, as small
+    dicts {id, title, format}, in series_index then title order; None at the ends."""
+    series = book.get("series") or ""
+    if not series:
+        return None, None
+    rows = conn.execute("""
+        SELECT id, title, format FROM books
+        WHERE series = ? AND COALESCE(sub_series, '') = ? AND COALESCE(sub_series_2, '') = ?
+        ORDER BY series_index ASC, title COLLATE NOCASE ASC, id ASC
+    """, (series, book.get("sub_series") or "", book.get("sub_series_2") or "")).fetchall()
+    ids = [r["id"] for r in rows]
+    if book["id"] not in ids:
+        return None, None
+    i = ids.index(book["id"])
+    prev = dict(rows[i - 1]) if i > 0 else None
+    nxt = dict(rows[i + 1]) if i + 1 < len(rows) else None
+    return prev, nxt
 
 
 def _fixup_epub_images(epub_path):

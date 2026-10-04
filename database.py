@@ -100,7 +100,9 @@ def init_db():
     # Used by /api/collections (series split into sub-collections). The library
     # database got them outside init_db, so a fresh database lacked them and
     # every series page failed with "no such column: sub_series".
-    for col in ("sub_series", "sub_series_2"):
+    # reading_mode: '' = automatic (detection), 'webtoon' = always the continuous
+    # vertical reader (manhua / manhwa / webtoon), never paged. See _is_webtoon().
+    for col in ("sub_series", "sub_series_2", "reading_mode"):
         try:
             conn.execute(f"ALTER TABLE books ADD COLUMN {col} TEXT DEFAULT ''")
             conn.commit()

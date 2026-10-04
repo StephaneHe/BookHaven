@@ -1,6 +1,11 @@
 package com.bookhaven.android.data.api.model
 
+import com.google.gson.TypeAdapter
+import com.google.gson.annotations.JsonAdapter
 import com.google.gson.annotations.SerializedName
+import com.google.gson.stream.JsonReader
+import com.google.gson.stream.JsonToken
+import com.google.gson.stream.JsonWriter
 
 data class Book(
     @SerializedName("id") val id: Int,
@@ -16,12 +21,48 @@ data class Book(
     @SerializedName("file_size") val fileSize: Long = 0L,
     @SerializedName("added_at") val addedAt: String = "",
     @SerializedName("volume_count") val volumeCount: Int = 0,
+    // A number in lists (/api/continue-reading), an object {progress, current_location, ...}
+    // or null in GET /api/books/<id>: parsed leniently so the detail call no longer fails.
+    @JsonAdapter(FlexibleProgressAdapter::class)
     @SerializedName("progress") val progress: Float = 0f,
     @SerializedName("current_location") val currentLocation: String = "",
     @SerializedName("last_read") val lastRead: String = "",
     // Content fingerprint (file_size:modified_at) — see ComicPagesResponse.
-    @SerializedName("content_version") val contentVersion: String = ""
+    @SerializedName("content_version") val contentVersion: String = "",
+    // Book detail only: manhua / manhwa / webtoon = always the continuous vertical reader.
+    @SerializedName("webtoon") val webtoon: Boolean = false,
+    @SerializedName("series_prev") val seriesPrev: SeriesRef? = null,
+    @SerializedName("series_next") val seriesNext: SeriesRef? = null
 )
+
+/** Previous / next book of the same series (GET /api/books/<id>). */
+data class SeriesRef(
+    @SerializedName("id") val id: Int,
+    @SerializedName("title") val title: String = "",
+    @SerializedName("format") val format: String = ""
+)
+
+/** Reads a progress percentage from a number, an object holding "progress", or null. */
+class FlexibleProgressAdapter : TypeAdapter<Float>() {
+    override fun write(out: JsonWriter, value: Float?) { out.value(value ?: 0f) }
+
+    override fun read(reader: JsonReader): Float = when (reader.peek()) {
+        JsonToken.NUMBER -> reader.nextDouble().toFloat()
+        JsonToken.STRING -> reader.nextString().toFloatOrNull() ?: 0f
+        JsonToken.BEGIN_OBJECT -> {
+            var p = 0f
+            reader.beginObject()
+            while (reader.hasNext()) {
+                if (reader.nextName() == "progress" && reader.peek() == JsonToken.NUMBER) {
+                    p = reader.nextDouble().toFloat()
+                } else reader.skipValue()
+            }
+            reader.endObject()
+            p
+        }
+        else -> { reader.skipValue(); 0f }
+    }
+}
 
 data class BooksResponse(
     @SerializedName("books") val books: List<Book> = emptyList(),

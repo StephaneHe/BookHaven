@@ -703,6 +703,14 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 .page-indicator .cont-nav:hover:not(:disabled) { background: #7c5cff; }
 .page-indicator .cont-nav:disabled { opacity: 0.35; cursor: default; }
 #reader-view.comic-continuous .page-indicator .cont-nav { display: inline-block; }
+/* Webtoon mode has no notion of pages: no "page X / N" counter or page jump. */
+#reader-view.comic-continuous #comic-page-input,
+#reader-view.comic-continuous #comic-page-total,
+#reader-view.comic-continuous #comic-page-go { display: none; }
+/* Strips glued edge to edge: no gap, no baseline space between plates. */
+#comic-scroll { line-height: 0; }
+#comic-scroll img { vertical-align: top; margin-top: 0; margin-bottom: 0; }
+#comic-scroll .next-chapter-btn, #comic-scroll .end-of-manhua { line-height: normal; }
 
 /* ── Scan Banner ───────────────────────────────────────────── */
 .scan-banner {
@@ -2277,16 +2285,10 @@ async function openBook(id) {
 async function closeReader() {
   // Flush any pending debounced save immediately
   clearTimeout(state.saveProgressTimer);
-  // Closed right at the bottom of a webtoon chapter (before the debounced
-  // scroll tracking ran): record the chapter as read to its end.
-  if (state.comicContinuous && comicAtBottom()) {
-    const imgs = document.querySelectorAll('#comic-scroll img[data-idx]');
-    if (imgs.length) {
-      const idx = parseInt(imgs[imgs.length - 1].dataset.idx, 10);
-      state._lastProgress = Math.round(((idx + 1) / state.comicPages.length) * 100);
-      state._lastLocation = String(idx);
-    }
-  }
+  // Webtoon: save the exact scroll position reached (finished if at the end),
+  // even if the debounced scroll tracking has not run yet.
+  comicCaptureProgress();
+  state._comicRestore = null;
   await saveCurrentProgress();
   // Release prefetched EPUB resources (revokes blob: URLs, frees memory)
   _epubCacheClear();
@@ -2748,21 +2750,23 @@ async function openComic(bookId) {
     const data = await r.json();
     state.comicPages = data.pages;
 
-    // Restore progress (a global plate index)
-    let startPage = 0;
+    // Restore progress: a plate index (paged) or "plate.fraction" (webtoon scroll position)
     const prog = state.currentBook.progress;
-    if (prog && prog.current_location) {
-      startPage = parseInt(prog.current_location) || 0;
-    }
+    const startLoc = (prog && prog.current_location) || '';
+    const startPage = parseInt(startLoc) || 0;
 
-    // Manhua/webtoon = tall plates -> read as ONE vertical scroll, by chapter,
-    // with no left/right page-flip. Normal comics keep the paged single-plate view.
-    const siblings = comicLoadSiblings(state.currentBook);
-    state.comicContinuous = await comicDetectWebtoon(bookId);
-    state.comicSiblings = await siblings;
+    // Manhua / manhwa / webtoon -> ONE continuous vertical scroll, no page notion.
+    // The server flag (series/category, see _is_webtoon) is authoritative so such a
+    // book never falls back to the paged reader; detection covers unflagged books.
+    // Normal comics keep the paged single-plate view.
+    state.comicSiblings = { prev: state.currentBook.series_prev || null,
+                            next: state.currentBook.series_next || null };
+    state.comicContinuous = !!state.currentBook.webtoon || await comicDetectWebtoon(bookId);
     document.getElementById('reader-view').classList.toggle('comic-continuous', state.comicContinuous);
     if (state.comicContinuous) {
-      openComicContinuous(startPage);
+      // Keep the stored percentage on open (a finished book stays at 100 %);
+      // only actual scrolling recomputes it.
+      openComicContinuous(comicParseLocation(startLoc), startLoc ? prog.progress : null);
     } else {
       container.classList.remove('continuous');
       document.getElementById('comic-chapter-controls').style.display = 'none';
@@ -2816,6 +2820,13 @@ function comicZoomReset() { comicZoomApply(100, true); }
       if (e.ctrlKey) { e.preventDefault(); comicZoom(e.deltaY < 0 ? 1 : -1); }
     }, { passive: false });
     c.addEventListener('scroll', comicOnScroll, { passive: true });
+    // Webtoon progress follows the READER's scrolling only: programmatic scrolls
+    // (chapter render, position restore) must never rewrite the stored position.
+    const userScroll = () => { if (state.comicContinuous) state._comicScrolled = true; };
+    ['wheel', 'touchmove', 'mousedown'].forEach(t => c.addEventListener(t, userScroll, { passive: true }));
+    document.addEventListener('keydown', e => {
+      if (['ArrowDown', 'ArrowUp', 'PageDown', 'PageUp', ' ', 'Home', 'End'].includes(e.key)) userScroll();
+    });
   }
 })();
 
@@ -2851,7 +2862,7 @@ function comicJumpToInput() {
   n = Math.max(1, Math.min(total, n));
   if (state.comicContinuous) {
     const plate = n - 1;
-    comicRenderChapter(comicChapterOfPlate(plate), plate);
+    comicRenderChapter(comicChapterOfPlate(plate), { idx: plate, frac: 0 });
   } else {
     state.comicCurrentPage = n - 1;
     showComicPage();
@@ -2913,18 +2924,93 @@ function comicChapterOfPlate(plateIdx) {
   return 0;
 }
 
-function openComicContinuous(startPlate) {
+function openComicContinuous(start, startPct) {
   const container = document.getElementById('comic-container');
   container.classList.add('continuous');
   state.comicChapters = comicBuildChapters(state.comicPages);
   const sel = document.getElementById('comic-chapter-select');
   sel.innerHTML = state.comicChapters.map((c, i) => `<option value="${i}">Ch. ${c.num}</option>`).join('');
-  document.getElementById('comic-chapter-controls').style.display = 'flex';
-  const chIdx = comicChapterOfPlate(startPlate || 0);
-  comicRenderChapter(chIdx, startPlate || 0);
+  // The chapter picker only makes sense for files holding several chapters
+  // (single-file manhua); one-file-per-chapter series use the bottom buttons.
+  document.getElementById('comic-chapter-controls').style.display =
+    state.comicChapters.length > 1 ? 'flex' : 'none';
+  start = start || { idx: 0, frac: 0 };
+  comicRenderChapter(comicChapterOfPlate(start.idx), start, startPct);
 }
 
-function comicRenderChapter(chIdx, scrollToPlate) {
+// Webtoon position = "<plate>.<fraction>": the plate at the top of the reading
+// area and how far (0..1) into it. Exact whatever the window size or zoom. Old
+// integer locations ("4") read as the top of that plate.
+function comicParseLocation(loc) {
+  const v = parseFloat(loc);
+  if (!isFinite(v) || v < 0) return { idx: 0, frac: 0 };
+  const idx = Math.floor(v);
+  return { idx, frac: Math.min(0.9999, v - idx) };
+}
+
+function comicReadPosition() {
+  const top = document.getElementById('comic-container').getBoundingClientRect().top;
+  for (const im of document.querySelectorAll('#comic-scroll img[data-idx]')) {
+    const r = im.getBoundingClientRect();
+    if (r.height > 0 && r.bottom > top + 1) {
+      return { idx: parseInt(im.dataset.idx, 10),
+               frac: Math.max(0, Math.min(0.9999, (top - r.top) / r.height)) };
+    }
+  }
+  return null;
+}
+
+// Reached the end of the file: past every plate of its last chapter, all loaded
+// (so an empty, still-loading chapter never counts as read).
+function comicReachedEnd() {
+  if (state.comicChapterIdx !== (state.comicChapters || []).length - 1) return false;
+  const imgs = [...document.querySelectorAll('#comic-scroll img[data-idx]')];
+  if (!imgs.length || !imgs.every(i => i.complete && i.naturalHeight > 0)) return false;
+  const end = document.querySelector('#comic-scroll .next-chapter-btn, #comic-scroll .end-of-manhua');
+  const bottom = document.getElementById('comic-container').getBoundingClientRect().bottom;
+  return end ? end.getBoundingClientRect().top <= bottom : comicAtBottom();
+}
+
+// Progress from the scroll position: exact location + percentage, 100 only at the end.
+function comicContinuousProgress() {
+  const pos = comicReadPosition();
+  if (!pos) return null;
+  const v = pos.idx + pos.frac;
+  const pct = comicReachedEnd() ? 100
+    : Math.max(1, Math.min(99, Math.floor(v / state.comicPages.length * 100)));
+  return { pct, location: v.toFixed(4) };
+}
+
+// Put plate idx / fraction at the top of the reading area. Plates above it load
+// asynchronously and change the layout, so the position is re-applied as they
+// load, until they all have or the user takes over (wheel, touch, click, key).
+function comicRestoreScroll(idx, frac) {
+  const c = document.getElementById('comic-container');
+  const el = document.querySelector(`#comic-scroll img[data-idx="${idx}"]`);
+  if (!el) return;
+  const token = {};
+  state._comicRestore = token;
+  const apply = () => { if (state._comicRestore === token) c.scrollTop = el.offsetTop + frac * el.offsetHeight; };
+  const stop = () => {
+    if (state._comicRestore === token) state._comicRestore = null;
+    ['wheel', 'touchstart', 'mousedown'].forEach(t => c.removeEventListener(t, stop));
+    document.removeEventListener('keydown', stop);
+  };
+  ['wheel', 'touchstart', 'mousedown'].forEach(t => c.addEventListener(t, stop, { passive: true }));
+  document.addEventListener('keydown', stop);
+  const pending = [...document.querySelectorAll('#comic-scroll img[data-idx]')]
+    .filter(i => parseInt(i.dataset.idx, 10) <= idx && !(i.complete && i.naturalHeight > 0));
+  let left = pending.length;
+  pending.forEach(i => {
+    const done = () => { apply(); if (--left === 0) stop(); };
+    i.addEventListener('load', done, { once: true });
+    i.addEventListener('error', done, { once: true });
+  });
+  apply();
+  if (!left) stop();
+}
+
+function comicRenderChapter(chIdx, scrollTo, startPct) {
   const chaps = state.comicChapters;
   chIdx = Math.max(0, Math.min(chaps.length - 1, chIdx));
   state.comicChapterIdx = chIdx;
@@ -2948,14 +3034,15 @@ function comicRenderChapter(chIdx, scrollToPlate) {
   _comicSetupPrefetch(chIdx, chaps, bookId);
   document.getElementById('comic-chapter-select').value = String(chIdx);
   const container = document.getElementById('comic-container');
+  state._comicRestore = null;
+  state._comicScrolled = false;      // progress is only recomputed after a real scroll
   container.scrollTop = 0;
-  const startIdx = (scrollToPlate != null) ? scrollToPlate : chap.idxs[0];
-  comicUpdateIndicator(startIdx);
-  updateProgress(Math.round(((startIdx + 1) / state.comicPages.length) * 100), String(startIdx));
-  if (scrollToPlate != null && scrollToPlate !== chap.idxs[0]) {
-    const el = scroll.querySelector(`img[data-idx="${scrollToPlate}"]`);
-    if (el) { el.scrollIntoView({ block: 'start' }); setTimeout(() => el.scrollIntoView({ block: 'start' }), 400); }
-  }
+  const start = (scrollTo && chap.idxs.includes(scrollTo.idx)) ? scrollTo : { idx: chap.idxs[0], frac: 0 };
+  const v = start.idx + start.frac;
+  const pct = (startPct != null && start === scrollTo) ? startPct
+    : Math.max(1, Math.min(99, Math.floor(v / state.comicPages.length * 100)));
+  updateProgress(pct, v.toFixed(4));
+  if (start.idx !== chap.idxs[0] || start.frac > 0) comicRestoreScroll(start.idx, start.frac);
 }
 
 // Prefetch for the continuous reader: pre-DECODE plates just before they scroll
@@ -3007,22 +3094,24 @@ function comicChapterStep(dir) {
   }
   const sib = state.comicSiblings || {};
   const book = dir < 0 ? sib.prev : sib.next;
-  if (book) comicOpenSibling(book.id, dir > 0);
+  if (book) comicOpenSibling(book.id);
 }
 
-async function comicOpenSibling(id, forward) {
+async function comicOpenSibling(id) {
   clearTimeout(state.saveProgressTimer);
-  // Moving on from the end of this file (last plate on screen) = finished, even
-  // if the debounced scroll tracking has not caught up yet.
-  const imgs = document.querySelectorAll('#comic-scroll img[data-idx]');
-  const last = imgs[imgs.length - 1];
-  if (forward && last && last.getBoundingClientRect().top < window.innerHeight) {
-    const idx = parseInt(last.dataset.idx, 10);
-    state._lastProgress = Math.round(((idx + 1) / state.comicPages.length) * 100);
-    state._lastLocation = String(idx);
-  }
-  await saveCurrentProgress();       // keep the position reached in the current file
+  comicCaptureProgress();            // exact position now (finished if at the end)
+  await saveCurrentProgress();
   openBook(id);
+}
+
+// Take the current scroll position as progress without waiting for the
+// debounced tracking (leaving the reader, moving to another chapter file).
+function comicCaptureProgress() {
+  // Not scrolled since opening: keep the stored position and % (a finished book
+  // reopened and closed stays finished).
+  if (!state.comicContinuous || state._comicRestore || !state._comicScrolled) return;
+  const p = comicContinuousProgress();
+  if (p) { state._lastProgress = p.pct; state._lastLocation = p.location; }
 }
 
 function comicAtBottom() {
@@ -3031,24 +3120,8 @@ function comicAtBottom() {
 }
 
 function comicScrollTop() {
+  state._comicScrolled = true;       // deliberate move: track the new position
   document.getElementById('comic-container').scrollTop = 0;
-}
-
-// Books immediately before/after this one in its series (series_index order).
-// Series split into sub-collections are not navigated (no flat order).
-async function comicLoadSiblings(book) {
-  const none = { prev: null, next: null };
-  if (!book || !book.series) return none;
-  try {
-    const r = await fetch(`/api/collections/${encodeURIComponent(book.series)}`);
-    const d = await r.json();
-    const list = (d.type === 'books' && Array.isArray(d.books)) ? d.books : [];
-    const i = list.findIndex(b => b.id === book.id);
-    if (i < 0) return none;
-    return { prev: list[i - 1] || null, next: list[i + 1] || null };
-  } catch (e) {
-    return none;
-  }
 }
 
 function comicUpdateIndicator(globalIdx) {
@@ -3058,28 +3131,23 @@ function comicUpdateIndicator(globalIdx) {
   if (tot) tot.textContent = ` / ${state.comicPages.length}`;
 }
 
-// Track the topmost visible plate while scrolling -> update indicator + progress.
+// Track the scroll position -> progress (exact location + percentage). Ignored
+// while a restore is still placing the reader (its scrolls are not reading).
 let _comicScrollTimer = null;
 function comicOnScroll() {
-  if (!state.comicContinuous) return;
+  if (!state.comicContinuous || state._comicRestore) return;
   clearTimeout(_comicScrollTimer);
   _comicScrollTimer = setTimeout(() => {
-    const topbarBottom = document.querySelector('.reader-topbar').getBoundingClientRect().bottom;
-    const imgs = document.querySelectorAll('#comic-scroll img[data-idx]');
-    let cur = null;
-    for (const im of imgs) { if (im.getBoundingClientRect().bottom > topbarBottom + 4) { cur = im; break; } }
-    // At the very bottom the last plate may never reach the top of the screen
-    // (short last plate): count the chapter as read to its end, or a finished
-    // chapter/book would never be recorded as finished (100%).
-    if (comicAtBottom() && imgs.length) cur = imgs[imgs.length - 1];
-    if (!cur) return;
-    const idx = parseInt(cur.dataset.idx, 10);
-    comicUpdateIndicator(idx);
-    updateProgress(Math.round(((idx + 1) / state.comicPages.length) * 100), String(idx));
+    if (!state.comicContinuous || state._comicRestore || !state._comicScrolled) return;
+    const p = comicContinuousProgress();
+    if (p) updateProgress(p.pct, p.location);
   }, 150);
 }
 
+// Page flips exist only in the paged reader: in webtoon mode (one continuous
+// scroll) a horizontal swipe must not move a hidden page counter.
 function comicPrev() {
+  if (state.comicContinuous) return;
   if (state.comicCurrentPage > 0) {
     state.comicCurrentPage--;
     showComicPage();
@@ -3087,6 +3155,7 @@ function comicPrev() {
 }
 
 function comicNext() {
+  if (state.comicContinuous) return;
   if (state.comicCurrentPage < state.comicPages.length - 1) {
     state.comicCurrentPage++;
     showComicPage();

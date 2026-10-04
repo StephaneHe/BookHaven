@@ -68,7 +68,7 @@ def test_finish_chapter_then_next_one_is_in_continue_reading(live, pw_browser, v
                                " && [...document.querySelectorAll('#comic-scroll img')].every(i => i.complete && i.naturalHeight)",
                                timeout=15000)
         # read to the end, then leave the reader
-        page.evaluate("() => { const c = document.getElementById('comic-container'); c.scrollTop = c.scrollHeight; }")
+        page.evaluate("() => { const c = document.getElementById('comic-container'); c.dispatchEvent(new WheelEvent('wheel', {deltaY: 100})); c.scrollTop = c.scrollHeight; }")
         page.wait_for_timeout(400)
         page.evaluate("() => closeReader()")
         page.wait_for_function("() => document.querySelector('#continue-row .continue-card')", timeout=10000)
@@ -101,7 +101,7 @@ def test_moving_on_from_the_end_marks_the_chapter_finished(live, pw_browser):
         page.wait_for_function("() => document.querySelector('#comic-scroll .next-chapter-btn')"
                                " && [...document.querySelectorAll('#comic-scroll img')].every(i => i.complete && i.naturalHeight)",
                                timeout=15000)
-        page.evaluate("() => { const c = document.getElementById('comic-container'); c.scrollTop = c.scrollHeight; }")
+        page.evaluate("() => { const c = document.getElementById('comic-container'); c.dispatchEvent(new WheelEvent('wheel', {deltaY: 100})); c.scrollTop = c.scrollHeight; }")
         page.click("#comic-scroll .next-chapter-btn")          # immediately, no wait for the scroll debounce
         page.wait_for_function("() => document.getElementById('reader-title').textContent === 'Chapitre 3'",
                                timeout=10000)

@@ -1,5 +1,29 @@
 # Changelog — BookHaven Android
 
+## [1.10.0] - 2026-10-04
+
+### Changed
+- **Manhua / manhwa / webtoon : défilement vertical continu uniquement**, aligné sur
+  le web 2.9.0. Le drapeau serveur `webtoon` (book detail) est prioritaire : un
+  tel livre ne repasse jamais en mode paginé (détection d'images en secours,
+  hors ligne). Pas de compteur « page X / N » en mode continu.
+- **Progression = position de défilement exacte** « planche.fraction » + %, 100 %
+  seulement en bas du dernier chapitre ; **reprise exacte** (repositionnement dès
+  que la planche cible a sa vraie hauteur). Les positions entières restent lues.
+- **Navigation de série** : ‹ › et le bouton de fin passent au chapitre suivant du
+  fichier puis au **livre suivant/précédent de la série** (« Suivant : <titre> › »),
+  y compris s'il est téléchargé hors ligne.
+
+### Fixed
+- **`GET /api/books/<id>` ne se lisait plus dès qu'un livre avait une progression**
+  (le serveur renvoie `progress` sous forme d'objet, le modèle attendait un
+  nombre) : l'écran de détail et la vérification de mise à jour hors ligne
+  échouaient silencieusement. Lecture tolérante (`FlexibleProgressAdapter`).
+
+### Changed
+- versionCode 68, versionName 1.10.0. Premiers tests unitaires JVM
+  (`WebtoonReaderModelTest` : parsing de la progression, règle webtoon). APK buildé.
+
 ## [1.9.6] - 2026-10-04
 
 ### Fixed

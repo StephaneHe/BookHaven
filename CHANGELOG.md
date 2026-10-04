@@ -5,6 +5,48 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.0] - 2026-10-04
+
+### Changed
+- **Manhua / manhwa / webtoon : lecture TOUJOURS en un seul défilement vertical
+  continu, sans aucune notion de page** (décision utilisateur). Plus de boutons
+  ‹ › de page, de zones de clic de page, de flèches de page, de swipe qui tourne
+  une page, ni de compteur « page X / N ». Bandes collées bord à bord (aucun
+  espace), largeur adaptée à l'écran (colonne bornée sur desktop, zoom conservé).
+  Reste uniquement la navigation entre **chapitres / livres de la série** : bouton
+  de fin « Suivant : <titre> › », boutons ‹ (précédent) / ⤒ (haut) / › (suivant),
+  flèches ←/→ ; le sélecteur de chapitre n'apparaît que pour un fichier contenant
+  plusieurs chapitres. Les autres types (BD, comics classiques, PDF, EPUB) ne
+  changent pas.
+- **Type déterminé côté serveur** (`webtoon` dans `GET /api/books/<id>`) : colonne
+  `books.reading_mode = 'webtoon'`, catégorie *Webcomics*, ou tout livre d'une
+  série marquée (les nouveaux chapitres en héritent). Un livre de ce type ne
+  repasse jamais en mode paginé ; la détection d'images ne sert plus que pour les
+  livres non marqués. Séries marquées : « Solo Leveling » (16 tomes) et « Solo
+  Leveling: Ragnarok » (47 chapitres).
+- **Progression = position de défilement** : `current_location` vaut
+  « planche.fraction » (ex. `3.4521` = 45 % dans la planche 3), indépendant de la
+  taille d'écran et du zoom ; pourcentage associé, **100 % uniquement à la fin**
+  (tout chargé, fin du dernier chapitre atteinte). Reprise exacte à l'endroit
+  quitté (repositionnement maintenu pendant le chargement des bandes au-dessus,
+  jusqu'à ce que l'utilisateur reprenne la main). Les anciennes positions
+  entières restent lues (haut de la planche).
+  Seul le défilement **de l'utilisateur** (molette, toucher, barre de
+  défilement, clavier, ⤒) met à jour la progression : rouvrir puis fermer un livre
+  terminé sans le relire le laisse à 100 % (la reprise de position ne réécrit rien).
+- `GET /api/books/<id>` expose aussi `series_prev` / `series_next` (id, titre,
+  format), utilisés par le web et l'app pour passer au livre voisin.
+
+### Fixed
+- Mode continu : un swipe horizontal déclenchait la logique de page du mode
+  paginé (compteur caché déplacé, progression faussée).
+
+### Changed
+- **`__version__` 2.8.4 → 2.9.0.** Tag de retour : `pre-webtoon-scroll-only-2.8.4`.
+  Tests : `tests/test_comic_reader_scroll.py` (aucun bouton/compteur de page en
+  webtoon, bandes collées, swipe inerte, drapeau serveur, reprise exacte,
+  sauvegarde de position, 100 % à la fin, chapitre suivant), `tests/test_webtoon_flag_api.py`.
+
 ## [2.8.4] - 2026-10-04
 
 ### Added
