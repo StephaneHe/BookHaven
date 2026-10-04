@@ -38,6 +38,7 @@ const WATCHDOG_INTERVAL_MS  = 10_000;   // probe toutes les 10s
 const PROBE_TIMEOUT_MS      = 5_000;    // timeout par probe
 const CONSEC_FAILS_TO_RESTART = 2;      // 2 échecs consécutifs → restart
 const RESTART_COOLDOWN_MS   = 90_000;   // pas plus d'1 restart par 90s
+const RETRY_AFTER_FAILED_RESTART_MS = 20_000;   // restart en échec → nouvel essai rapide
 const STARTUP_GRACE_MS      = 90_000;   // pas de restart pendant les 90s post-démarrage
 
 const startupTime = Date.now();
@@ -80,17 +81,32 @@ function triggerRestart() {
   restartCount++;
   log(`SERVER DOWN — lancement restart-bookhaven.cmd (restart #${restartCount})`);
 
+  // stdio 'ignore': the server started by the script would inherit pipes and
+  // keep them open, blocking spawnSync until its timeout (incident 2026-10-04:
+  // watchdog stuck 150 s). The script logs to logs/restart.log instead.
   const r = spawnSync(
     'cmd.exe',
     ['/c', RESTART_CMD],
     {
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: ['ignore', 'ignore', 'ignore'],
       cwd: ROOT,
       timeout: 150_000,  // 2m30 max — le restart peut attendre 120s
+      windowsHide: true,
     }
   );
 
   log(`restart exit=${r.status} (signal=${r.signal || 'none'})`);
+  try {
+    const tail = fs.readFileSync(path.join(ROOT, 'logs', 'restart.log'), 'utf8').trim().split(/\r?\n/).slice(-4);
+    log(`restart.log: ${tail.map(l => l.trim()).join(' | ')}`);
+  } catch {}
+  // A failed restart (exit != 0: port still held, no HTTP answer) must not
+  // block the next attempt for the full cooldown: incident 2026-10-04, the
+  // hung server stayed down 95 s more because of it.
+  if (r.status !== 0) {
+    lastRestartTs = Date.now() - RESTART_COOLDOWN_MS + RETRY_AFTER_FAILED_RESTART_MS;
+    log(`restart did not bring the server back — next attempt allowed in ${RETRY_AFTER_FAILED_RESTART_MS / 1000}s`);
+  }
   if (r.stdout && r.stdout.length)
     log(`restart stdout: ${r.stdout.toString().trim().split('\n').slice(-5).join(' | ')}`);
   if (r.stderr && r.stderr.length)

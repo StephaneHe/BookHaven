@@ -1,5 +1,10 @@
 """Optimized conftest - reuse pages across tests in same viewport."""
 import os
+import tempfile
+
+# Never write into the production log (bookhaven.log is what incident diagnosis
+# reads): the app and the UI test server log to a temp file instead.
+os.environ.setdefault("BOOKHAVEN_LOG_FILE", os.path.join(tempfile.gettempdir(), "bookhaven-tests.log"))
 import sys
 import time
 import subprocess

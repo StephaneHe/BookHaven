@@ -18,6 +18,7 @@ PLATES = {b: 6 for b in SERIES}
 PLATES[920003] = 30            # long chapters so a cancellation lands mid-way
 PLATES[920004] = 30
 SIZES = {}                     # bid -> file_size served in series_following (budget test)
+BUSY = {}                      # (bid, plate) -> number of 503 answers still to give
 LOG = []                       # (time, kind, book, plate)
 _PNG = {}
 
@@ -51,6 +52,10 @@ def _handler(route):
         return route.fulfill(status=200, content_type="application/json",
                              body=json.dumps({"pages": pages, "total": len(pages), "content_version": f"v{bid}"}))
     pm = re.match(r"/comic-page/(\d+)$", rest)
+    if pm and BUSY.get((bid, int(pm.group(1))), 0) > 0:
+        BUSY[(bid, int(pm.group(1)))] -= 1
+        LOG.append((time.time(), "busy", bid, int(pm.group(1))))
+        return route.fulfill(status=503, headers={"Retry-After": "2"}, body="busy")
     if pm:
         LOG.append((time.time(), "page", bid, int(pm.group(1))))
         return route.fulfill(status=200, content_type="image/png", body=_png((int(pm.group(1)) * 7) % 256))
@@ -64,6 +69,7 @@ def reader(desktop_page):
     page.route(pattern, _handler)
     LOG.clear()
     SIZES.clear()
+    BUSY.clear()
     page.evaluate("() => localStorage.removeItem('bookhaven.precacheChapters')")
     yield page
     page.evaluate("() => { closeReader(); localStorage.removeItem('bookhaven.precacheChapters'); }")
@@ -157,3 +163,25 @@ def test_R98_byte_budget_limits_whole_chapters(reader):
     assert sorted({p for _, p in _pages_of(920002)}) == list(range(PLATES[920002]))
     assert sorted({p for _, p in _pages_of(920003)}) == [0, 1]             # first strips only
     assert sorted({p for _, p in _pages_of(920004)}) == list(range(PLATES[920004]))
+
+
+def test_R100_precache_backs_off_when_server_is_busy(reader):
+    """A 503 (server shedding load) stops the pre-cache: the chapter being read
+    keeps the server to itself."""
+    page = reader
+    BUSY[(920002, 1)] = 99
+    _open(page, 920001)
+    page.wait_for_function("() => comicPrecacheStatus().running === false", timeout=15000)
+    page.wait_for_timeout(1500)
+    pre = [(b, p) for (_, kind, b, p) in LOG if kind in ("page", "busy") and b != 920001]
+    assert pre[-1] == (920002, 1)                 # nothing requested after the 503
+    assert not [x for x in pre if x[0] in (920003, 920004) and x[1] >= 2]
+
+
+def test_R100_strip_refused_once_is_retried(reader):
+    """A strip answered 503 (server busy) is retried and finally shows."""
+    page = reader
+    BUSY[(920001, 2)] = 1
+    _open(page, 920001)                           # waits until every strip is loaded
+    tries = [k for (_, k, b, p) in LOG if b == 920001 and p == 2]
+    assert tries[:2] == ["busy", "page"]

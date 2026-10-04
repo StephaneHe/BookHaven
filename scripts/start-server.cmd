@@ -31,7 +31,7 @@ for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":%PORT% " ^| findstr "LISTEN
     taskkill /PID %%p /F /T >nul 2>&1
 )
 :: Small grace for the port to be released
-timeout /t 2 /nobreak >nul
+ping -n 3 127.0.0.1 >nul   & rem `timeout /t` fails without a console (scheduled task)
 
 :: --- Rotate server logs (no in-process rotation on these files) --------
 :: Must run after the kill above: the old server holds server.log open.

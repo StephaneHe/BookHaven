@@ -2893,6 +2893,17 @@ function comicJumpToInput() {
 // Page URL. With the archive's content_version the server answers "immutable":
 // the browser HTTP cache can then serve pre-cached chapters with no request,
 // and a rebuilt archive (new version) gets a new URL.
+// A strip that failed (server busy -> 503, network blip) is retried a few times
+// with backoff instead of staying broken.
+function comicImgRetry(img) {
+  const n = parseInt(img.dataset.tries || '0', 10);
+  if (n >= 4 || !img.isConnected) return;
+  img.dataset.tries = String(n + 1);
+  const url = img.getAttribute('src');
+  setTimeout(() => { if (img.isConnected) { img.removeAttribute('src'); img.setAttribute('src', url); } },
+             1500 * Math.pow(2, n));
+}
+
 function comicPageUrl(bookId, i, version) {
   const v = (version === undefined) ? (state.currentBook && state.currentBook.id === bookId ? state.comicVersion : '') : version;
   return `/api/books/${bookId}/comic-page/${i}` + (v ? `?v=${encodeURIComponent(v)}` : '');
@@ -2912,6 +2923,7 @@ function comicPageUrl(bookId, i, version) {
 // downloading hundreds of MB.
 const COMIC_PRECACHE_DEFAULT = 3, COMIC_PRECACHE_MAX = 5, COMIC_PRECACHE_FIRST = 2;
 const COMIC_PRECACHE_BUDGET = 400 * 1024 * 1024;
+const COMIC_PRECACHE_SLOW_MS = 4000;     // one strip slower than this = back off
 let _comicPrecache = null;
 
 function comicPrecacheCount() {
@@ -2934,7 +2946,7 @@ function comicStopPrecache() {
 function comicPrecacheStatus() {
   const j = _comicPrecache;
   return j ? { running: !j.cancelled, books: j.books.slice(), whole: (j.whole || []).slice(),
-               queued: j.queued, done: j.done, finished: j.finished }
+               queued: j.queued, done: j.done, finished: j.finished, stoppedSlow: !!j.stoppedSlow }
            : { running: false, books: [], whole: [], queued: 0, done: 0, finished: false };
 }
 
@@ -2982,8 +2994,16 @@ async function comicStartPrecache(book) {
       if (job.cancelled) return;
       await idle();
       if (job.cancelled) return;
+      const t0 = performance.now();
       const r = await fetch(comicPageUrl(l.id, i, l.v), { signal: job.abort.signal, credentials: 'same-origin' });
       await r.arrayBuffer();         // body read -> stored in the HTTP cache, then dropped
+      // The server is shedding load (503) or its library disk is slow: stop, the
+      // chapter being read must keep the server to itself.
+      if (r.status === 503 || performance.now() - t0 > COMIC_PRECACHE_SLOW_MS) {
+        job.stoppedSlow = true;
+        job.cancelled = true;
+        return;
+      }
       job.done++;
     }
     job.finished = true;
@@ -3141,7 +3161,7 @@ function comicRenderChapter(chIdx, scrollTo, startPct, opts) {
   const bookId = state.currentBook.id;
   const scroll = document.getElementById('comic-scroll');
   const sib = state.comicSiblings || {};
-  let html = chap.idxs.map(i => `<img data-idx="${i}" src="${comicPageUrl(bookId, i)}" alt="">`).join('');
+  let html = chap.idxs.map(i => `<img data-idx="${i}" src="${comicPageUrl(bookId, i)}" alt="" onerror="comicImgRetry(this)">`).join('');
   if (chIdx < chaps.length - 1) {
     html += `<button class="next-chapter-btn" onclick="comicChapterStep(1)">Chapitre suivant ›</button>`;
   } else if (sib.next) {

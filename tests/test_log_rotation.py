@@ -20,7 +20,10 @@ def test_file_handler_is_rotating():
     assert isinstance(h, RotatingFileHandler)
     assert h.maxBytes == 5 * 1024 * 1024
     assert h.backupCount == 3
-    assert h.baseFilename.endswith("bookhaven.log")
+    # bookhaven.log in production; the suite redirects it (BOOKHAVEN_LOG_FILE,
+    # set in conftest) so tests never write into the production log.
+    expected = os.environ.get("BOOKHAVEN_LOG_FILE") or "bookhaven.log"
+    assert h.baseFilename.endswith(os.path.basename(expected))
 
 
 def test_no_unbounded_bookhaven_log_handler_on_root():

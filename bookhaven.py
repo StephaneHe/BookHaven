@@ -8,6 +8,7 @@ import uuid
 import shutil
 import zipfile
 import hashlib
+from werkzeug.exceptions import HTTPException
 from collections import OrderedDict
 import logging
 import threading
@@ -46,7 +47,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.10.1"
+__version__ = "2.10.2"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -57,7 +58,9 @@ if HAS_RARFILE:
 # ── Logging ──────────────────────────────────────────────────────────────────
 from logging.handlers import RotatingFileHandler
 _log_file_handler = RotatingFileHandler(
-    os.path.join(os.path.dirname(__file__), "bookhaven.log"),
+    # BOOKHAVEN_LOG_FILE: the test suite points this to a temp file so its own
+    # requests never pollute the production log used for incident diagnosis.
+    os.environ.get("BOOKHAVEN_LOG_FILE") or os.path.join(os.path.dirname(__file__), "bookhaven.log"),
     maxBytes=5 * 1024 * 1024, backupCount=3, encoding="utf-8",
 )
 
@@ -93,6 +96,124 @@ app = Flask(__name__, static_folder="static", template_folder="templates")
 app.secret_key = config.SECRET_KEY
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.config["MAX_CONTENT_LENGTH"] = config.MAX_UPLOAD_BYTES
+
+# ── Responsiveness guards (incident 2026-10-04 21:11) ────────────────────────
+# All requests share one waitress thread pool. When reads from the USB library
+# disk stall, image requests (reader + pre-cache + app) used to occupy every
+# thread, so even the library listing -- which never touches that disk --
+# queued behind them and the server looked dead. Two guards:
+#  * at most ARCHIVE_IO_MAX requests read comic archives at once and at most
+#    ARCHIVE_QUEUE_MAX are in progress OR waiting (a waiting request still holds
+#    a waitress thread); beyond that an image request gets an immediate 503 +
+#    Retry-After, and a waiting one gives up after ARCHIVE_IO_WAIT s. The other
+#    threads therefore always stay free for the API (library listing...);
+#  * a stall monitor dumps in-flight requests + every thread's stack to
+#    logs/stall-*.log when a request runs longer than STALL_SECONDS.
+ARCHIVE_IO_MAX = int(os.environ.get("BOOKHAVEN_ARCHIVE_IO_MAX", "4"))
+ARCHIVE_IO_WAIT = float(os.environ.get("BOOKHAVEN_ARCHIVE_IO_WAIT", "10"))
+ARCHIVE_QUEUE_MAX = int(os.environ.get("BOOKHAVEN_ARCHIVE_QUEUE_MAX", "8"))
+_archive_io = threading.BoundedSemaphore(ARCHIVE_IO_MAX)
+_archive_pending = [0]              # requests holding or waiting for a slot
+_archive_pending_lock = threading.Lock()
+
+
+class _ArchiveBusy(Exception):
+    pass
+
+
+class _archive_slot:
+    """Context manager holding one archive-I/O slot (raises _ArchiveBusy)."""
+    def __enter__(self):
+        with _archive_pending_lock:
+            if _archive_pending[0] >= ARCHIVE_QUEUE_MAX:
+                raise _ArchiveBusy()        # shed at once: don't pin a thread waiting
+            _archive_pending[0] += 1
+        if not _archive_io.acquire(timeout=ARCHIVE_IO_WAIT):
+            with _archive_pending_lock:
+                _archive_pending[0] -= 1
+            raise _ArchiveBusy()
+        return self
+
+    def __exit__(self, *exc):
+        _archive_io.release()
+        with _archive_pending_lock:
+            _archive_pending[0] -= 1
+        return False
+
+
+def _busy_response():
+    resp = Response("Server busy reading the library disk, retry shortly.", status=503,
+                    mimetype="text/plain")
+    resp.headers["Retry-After"] = "2"
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
+STALL_SECONDS = float(os.environ.get("BOOKHAVEN_STALL_SECONDS", "20"))
+_inflight = {}                      # thread id -> (method + path, start time)
+_inflight_lock = threading.Lock()
+_last_stall_dump = [0.0]
+
+
+class _InflightMiddleware:
+    """Records each request's thread, path and start time (for the stall dump)."""
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        tid = threading.get_ident()
+        with _inflight_lock:
+            _inflight[tid] = (f"{environ.get('REQUEST_METHOD')} {environ.get('PATH_INFO')}", time.time())
+        try:
+            return self.wsgi_app(environ, start_response)
+        finally:
+            with _inflight_lock:
+                _inflight.pop(tid, None)
+
+
+app.wsgi_app = _InflightMiddleware(app.wsgi_app)
+
+
+def _dump_stall(now):
+    """Write in-flight requests and all thread stacks to logs/stall-<time>.log."""
+    import traceback as _tb
+    with _inflight_lock:
+        reqs = sorted(_inflight.items(), key=lambda kv: kv[1][1])
+    frames = sys._current_frames()
+    names = {t.ident: t.name for t in threading.enumerate()}
+    lines = [f"STALL DUMP {time.strftime('%Y-%m-%d %H:%M:%S')} — requests running > {STALL_SECONDS:.0f}s",
+             f"archive I/O slots free: {getattr(_archive_io, '_value', '?')}/{ARCHIVE_IO_MAX}, "
+             f"in progress or waiting: {_archive_pending[0]}/{ARCHIVE_QUEUE_MAX}", "",
+             "In-flight requests (oldest first):"]
+    lines += [f"  {now - t0:7.1f}s  thread {tid} ({names.get(tid, '?')})  {what}" for tid, (what, t0) in reqs]
+    lines.append("")
+    for tid, frame in frames.items():
+        lines.append(f"--- thread {tid} ({names.get(tid, '?')})")
+        lines += [l.rstrip() for l in _tb.format_stack(frame)]
+    d = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+    os.makedirs(d, exist_ok=True)
+    path = os.path.join(d, time.strftime("stall-%Y%m%d-%H%M%S.log"))
+    with open(path, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines))
+    logger.warning(f"Stalled requests detected (oldest {now - reqs[0][1][1]:.0f}s): dump in {path}")
+
+
+def _stall_monitor():
+    while True:
+        time.sleep(5)
+        try:
+            now = time.time()
+            with _inflight_lock:
+                oldest = min((t0 for _, t0 in _inflight.values()), default=now)
+            if now - oldest > STALL_SECONDS and now - _last_stall_dump[0] > 300:
+                _last_stall_dump[0] = now
+                _dump_stall(now)
+        except Exception as e:          # never let the monitor die
+            logger.error(f"stall monitor: {e}")
+
+
+def start_stall_monitor():
+    threading.Thread(target=_stall_monitor, name="stall-monitor", daemon=True).start()
 # SameSite=Lax stops cross-site form POSTs (e.g. against /api/upload/analyze)
 # from carrying the session cookie — the practical CSRF vector here.
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -1714,7 +1835,11 @@ def api_comic_pages(book_id):
     if book["format"] == "mobi":
         count = _mobi_page_count(resolved_path)
         return jsonify({"pages": list(range(count)), "total": count, "content_version": cver})
-    pages = _cached_comic_pages(resolved_path, book["format"])
+    try:
+        with _archive_slot():
+            pages = _cached_comic_pages(resolved_path, book["format"])
+    except _ArchiveBusy:
+        return _busy_response()
     return jsonify({"pages": pages, "total": len(pages), "content_version": cver})
 
 
@@ -1770,21 +1895,24 @@ def api_comic_page(book_id, page_num):
             logger.error(f"Error serving MOBI page: {e}")
             abort(500)
 
-    pages = _cached_comic_pages(resolved_path, book["format"])
-    if page_num < 0 or page_num >= len(pages):
-        abort(404)
-
-    page_name = pages[page_num]
-    ext = os.path.splitext(page_name)[1].lower()
-    mime = IMAGE_MIME.get(ext) or mimetypes.types_map.get(ext, "image/jpeg")
-
     try:
-        archive = _open_comic_archive(resolved_path, book["format"])
-        if not archive:
-            abort(415)
-        with archive:
-            data = archive.read(page_name)
+        with _archive_slot():
+            pages = _cached_comic_pages(resolved_path, book["format"])
+            if page_num < 0 or page_num >= len(pages):
+                abort(404)
+            page_name = pages[page_num]
+            ext = os.path.splitext(page_name)[1].lower()
+            mime = IMAGE_MIME.get(ext) or mimetypes.types_map.get(ext, "image/jpeg")
+            archive = _open_comic_archive(resolved_path, book["format"])
+            if not archive:
+                abort(415)
+            with archive:
+                data = archive.read(page_name)
         return _cached(send_file(BytesIO(data), mimetype=mime))
+    except _ArchiveBusy:
+        return _busy_response()
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error serving comic page: {e}")
         abort(500)
@@ -2881,8 +3009,15 @@ def _run_server(ssl_ctx=None):
         return
     # Align waitress's cap with Flask's MAX_CONTENT_LENGTH: by default
     # waitress accepts ~1 GB and spools it to disk before Flask can say 413.
-    waitress.serve(app, host=config.HOST, port=config.PORT, threads=8,
-                   max_request_body_size=config.MAX_UPLOAD_BYTES)
+    waitress.serve(app, host=config.HOST, port=config.PORT, **waitress_options())
+
+
+def waitress_options():
+    """Shared by production and the load test. 16 threads (I/O-bound workload:
+    archive reads release the GIL); archive reads are capped separately so the
+    library disk can never take the whole pool."""
+    return {"threads": int(os.environ.get("BOOKHAVEN_THREADS", "16")),
+            "max_request_body_size": config.MAX_UPLOAD_BYTES}
 
 
 if __name__ == "__main__":
@@ -2906,6 +3041,7 @@ if __name__ == "__main__":
     # Start background media enrichment worker
     media_worker.start_worker()
     logger.info("Media enrichment worker launched")
+    start_stall_monitor()           # dumps stacks if a request runs > STALL_SECONDS
 
     # In-process TLS is not supported; _run_server refuses loudly if cert
     # files are present so waitress can't be silently bypassed.

@@ -5,6 +5,52 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.2] - 2026-10-04
+
+### Fixed
+- **Incident du 2026-10-04 21:11 : « BookHaven ne liste plus les livres »** (R100).
+  Diagnostic (journaux serveur et watchdog) : la file de waitress est montée à 5
+  requêtes en attente en 15 s, donc les **8 threads étaient tous occupés** par des
+  lectures d'images de webtoon (lecteur ~20 bandes en parallèle + pré-cache 2.10.0 +
+  app) sur le disque de la bibliothèque **H: (disque USB externe 5 To, lent en
+  accès aléatoire et sujet à la mise en veille)**. La liste des livres, qui ne
+  touche pas ce disque, attendait derrière elles. Le disque a pu **déclencher**
+  l'incident (lenteur passagère, aucune erreur Windows enregistrée, inactif au
+  moment du constat) mais la **cause racine** est l'absence d'isolation : n'importe
+  quel ralentissement disque bloquait tout le serveur. Reproduit en test (disque
+  lent simulé) : avec l'ancienne configuration, l'accueil mettait **12 s** ; après
+  correctif, **0,03–0,1 s**.
+  - **Lectures d'archives plafonnées** : 4 lectures simultanées au plus, 8 requêtes
+    d'images en cours ou en attente au plus ; au-delà, **503 + Retry-After
+    immédiat** au lieu de bloquer un thread. Les autres threads restent toujours
+    libres pour l'API (liste, Continue Reading, progression).
+  - **16 threads waitress** (`BOOKHAVEN_THREADS`), charge surtout faite d'E/S.
+  - **Pré-cache qui recule** : arrêt dès une réponse 503 ou une bande plus lente que
+    4 s. **Bandes réessayées** (jusqu'à 4 fois, délai croissant) après une erreur
+    passagère.
+  - **Moniteur de blocage** : si une requête dure plus de 20 s, les requêtes en
+    cours et la pile de chaque thread sont écrites dans `logs/stall-*.log`
+    (`py-spy` n'est pas installé : il n'y avait aucun moyen d'obtenir un vidage).
+- **Relance automatique défaillante** : le watchdog avait bien détecté le serveur
+  bloqué (sondes en échec à 21:11:18–28), mais `restart-bookhaven.cmd` n'avait rien
+  fait : son écriture dans `server.log` (tenu ouvert par le serveur bloqué)
+  échouait et sautait le kill, `timeout /t` échoue sans console, et le succès se
+  jugeait au port « en écoute », ce qu'un serveur bloqué satisfait encore. Seconde
+  tentative 95 s plus tard (cooldown), service revenu à 21:13:05. Désormais : journal
+  dédié `logs/restart.log`, pauses par `ping`, kill répété jusqu'à libération du
+  port, succès = **réponse HTTP 200 de `/api/version`** ; le watchdog autorise un
+  nouvel essai 20 s après une relance en échec (au lieu de 90 s). Même correction de
+  `timeout /t` dans `start-server.cmd`.
+- Les tests n'écrivent plus dans le journal de production `bookhaven.log`
+  (`BOOKHAVEN_LOG_FILE` pointé vers un fichier temporaire) : ils le polluaient et
+  gênaient le diagnostic.
+
+### Changed
+- **`__version__` 2.10.1 → 2.10.2.** Tag de retour : `pre-incident-threads-2.10.1`.
+  Tests : `tests/test_library_responsive_load.py` (serveur de production waitress,
+  disque lent simulé, navigateur avec pré-cache + 40 clients simultanés : la liste
+  répond en < 2 s), tests client de recul du pré-cache et de nouvel essai des bandes.
+
 ## [2.10.1] - 2026-10-04
 
 ### Fixed
