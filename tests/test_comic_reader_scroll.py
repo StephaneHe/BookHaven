@@ -16,7 +16,12 @@ BOOKS = {
     900002: [(1200, 800)] + [(400, 2400)] * 4,                # webtoon chapter, landscape credits first
     900003: [(700, 1000)] + [(400, 2400)] * 4,                # webtoon volume, portrait cover first
     900004: [(700, 1000)] * 5,                                # normal comic
+    900011: [(1200, 800)] + [(400, 2400)] * 3,                # webtoon series: chapters 1..3,
+    900012: [(1200, 800)] + [(400, 2400)] * 3,                # one file per chapter
+    900013: [(1200, 800)] + [(400, 2400)] * 3,
 }
+SERIES = "Fake Series"
+SERIES_BOOKS = [900011, 900012, 900013]
 _PNG = {}
 
 
@@ -36,7 +41,8 @@ def _handler(route):
     plates = BOOKS[bid]
     if rest == "":
         body = {"id": bid, "title": f"Fake {bid}", "format": "cbz", "progress": None,
-                "file_size": 1, "modified_at": "x"}
+                "file_size": 1, "modified_at": "x",
+                "series": SERIES if bid in SERIES_BOOKS else ""}
         return route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
     if rest == "/comic-pages":
         pages = [f"p_{i}.png" for i in range(len(plates))]
@@ -50,15 +56,25 @@ def _handler(route):
     return route.fulfill(status=200, content_type="application/json", body="{}")  # progress, etc.
 
 
+def _collection_handler(route):
+    books = [{"id": b, "title": f"Fake {b}", "series_index": i + 1, "format": "cbz"}
+             for i, b in enumerate(SERIES_BOOKS)]
+    route.fulfill(status=200, content_type="application/json",
+                  body=json.dumps({"series": SERIES, "books": books, "total": len(books), "type": "books"}))
+
+
 @pytest.fixture
 def reader(request):
     page = request.getfixturevalue(request.param)
     pattern = re.compile(r".*/api/books/9000\d\d(/.*)?$")
+    coll = re.compile(r".*/api/collections/Fake%20Series$")
     page.route(pattern, _handler)
+    page.route(coll, _collection_handler)
     yield page
     page.evaluate("() => { comicZoomApply(100, false); closeReader(); }")
     page.wait_for_timeout(300)
     page.unroute(pattern)
+    page.unroute(coll)
 
 
 def _open(page, bid):
@@ -155,3 +171,81 @@ def test_webtoon_detection_ignores_credits_and_cover(reader, bid, continuous):
 def test_is_webtoon_dims_rule(desktop_page, dims, expected):
     js_dims = [None if d is None else {"w": d[0], "h": d[1]} for d in dims]
     assert desktop_page.evaluate("(d) => comicIsWebtoonDims(d)", js_dims) is expected
+
+
+# ── Navigation buttons: present, on screen, not covered, and working ──────────
+_USABLE = """(sel) => { const e = document.querySelector(sel); if (!e) return 'absent';
+    const cs = getComputedStyle(e), r = e.getBoundingClientRect();
+    if (cs.display === 'none' || cs.visibility === 'hidden' || !r.width || !r.height) return 'hidden';
+    if (r.right <= 0 || r.bottom <= 0 || r.left >= innerWidth || r.top >= innerHeight) return 'offscreen';
+    const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    if (!(hit === e || e.contains(hit))) return 'covered';
+    return e.disabled ? 'disabled' : 'ok'; }"""
+
+
+def _usable(page, sel):
+    return page.evaluate(_USABLE, sel)
+
+
+def _title(page):
+    return page.evaluate("() => document.getElementById('reader-title').textContent")
+
+
+def _wait_title(page, bid):
+    page.wait_for_function(f"() => document.getElementById('reader-title').textContent === 'Fake {bid}'"
+                           " && document.getElementById('comic-container').classList.contains('continuous')"
+                           " && document.querySelector('#comic-scroll img')", timeout=15000)
+
+
+@pytest.mark.parametrize("reader", ["desktop_page", "phone_page"], indirect=True)
+def test_paged_mode_has_working_prev_next(reader):
+    page = reader
+    _open(page, 900004)
+    _page_ready(page, 1)
+    assert _usable(page, ".comic-nav.next") == "ok"
+    assert _usable(page, ".comic-nav.prev") == "ok"
+    for sel in ("#comic-cont-prev", "#comic-cont-next", "#comic-cont-top"):
+        assert _usable(page, sel) == "hidden", f"{sel} must only show in continuous mode"
+    page.click(".comic-nav.next"); _page_ready(page, 2)
+    page.click(".comic-nav.next"); _page_ready(page, 3)
+    page.click(".comic-nav.prev"); _page_ready(page, 2)
+
+
+@pytest.mark.parametrize("reader", ["desktop_page", "phone_page"], indirect=True)
+def test_continuous_mode_navigates_the_series(reader):
+    page = reader
+    _open(page, 900012)
+    _wait_title(page, 900012)
+    for sel in ("#comic-cont-prev", "#comic-cont-top", "#comic-cont-next"):
+        assert _usable(page, sel) == "ok", f"{sel}: {_usable(page, sel)}"
+    assert _usable(page, ".comic-nav.next") == "hidden"      # paged side bars stay off in this mode
+    assert "Fake 900013" in page.inner_text("#comic-scroll .next-chapter-btn")
+
+    # back to top
+    page.evaluate("() => { const c = document.getElementById('comic-container'); c.scrollTop = c.scrollHeight; }")
+    assert _scroll_top(page) > 100
+    page.click("#comic-cont-top")
+    page.wait_for_timeout(150)
+    assert _scroll_top(page) == 0
+
+    # next chapter = next file of the series, opened at its top
+    page.click("#comic-cont-next")
+    _wait_title(page, 900013)
+    assert _scroll_top(page) == 0
+    assert _usable(page, "#comic-cont-next") == "disabled"    # last book: nothing after
+    assert page.locator("#comic-scroll .end-of-manhua").count() == 1
+
+    # previous chapter
+    page.click("#comic-cont-prev")
+    _wait_title(page, 900012)
+
+    # end-of-chapter button and keyboard arrows
+    page.click("#comic-scroll .next-chapter-btn")
+    _wait_title(page, 900013)
+    page.keyboard.press("ArrowLeft")
+    _wait_title(page, 900012)
+    page.keyboard.press("ArrowLeft")
+    _wait_title(page, 900011)
+    assert _usable(page, "#comic-cont-prev") == "disabled"    # first book: nothing before
+    page.keyboard.press("ArrowRight")
+    _wait_title(page, 900012)

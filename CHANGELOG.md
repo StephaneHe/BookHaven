@@ -5,6 +5,32 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.3] - 2026-10-04
+
+### Fixed
+- **Régression 2.8.2 : plus de boutons précédent/suivant utilisables sur les
+  webtoons.** La détection 2.8.2 a fait passer « Solo Leveling: Ragnarok » et les
+  tomes « Solo Leveling » en défilement continu, mode qui masque les barres ‹ › de
+  page et ne garde qu'une navigation par chapitre *interne au fichier*. Or chaque
+  chapitre/tome est un fichier séparé : le sélecteur n'avait qu'une entrée, ‹ › ne
+  faisaient rien et la fin affichait « — Fin — » sans issue. Le mode paginé (BD,
+  CBZ/CBR), l'EPUB et le PDF n'étaient pas touchés (vérifié sur de vrais livres,
+  desktop + mobile).
+  - **Navigation de série** : en continu, ‹ › (barre du haut, flèches clavier ←/→
+    et nouveaux boutons) passent au chapitre précédent/suivant du fichier, puis au
+    **livre précédent/suivant de la série** (ordre `series_index`, via
+    `/api/collections/<série>`). La fin de chapitre propose « Suivant : <titre> › ».
+  - **Boutons visibles** dans l'indicateur de page en bas d'écran (desktop et
+    mobile) en mode continu : ‹ (précédent), ⤒ (revenir en haut), › (suivant),
+    grisés au premier/dernier livre.
+- Tests navigateur `tests/test_comic_reader_scroll.py` : présence **à l'écran**,
+  non recouverts et fonctionnement des boutons dans chaque mode (paginé : ‹ › de
+  page ; continu : série, haut, clavier, bouton de fin), desktop + mobile. Ils
+  échouent sur le gabarit 2.8.2.
+
+### Changed
+- **`__version__` 2.8.2 → 2.8.3.**
+
 ## [2.8.2] - 2026-10-04
 
 ### Fixed

@@ -687,6 +687,16 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
   padding: 0 6px; font-size: 13px; cursor: pointer; line-height: 1.6;
 }
 #comic-page-go:hover { background: #444; color: #fff; }
+/* Continuous (webtoon) mode hides the side ‹ › page bars, so the indicator
+   carries the navigation: previous / next chapter (or series book) and back to top. */
+.page-indicator .cont-nav {
+  display: none; background: #333; color: #fff; border: 1px solid #555;
+  border-radius: 8px; min-width: 34px; height: 30px; padding: 0 8px;
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.page-indicator .cont-nav:hover:not(:disabled) { background: #7c5cff; }
+.page-indicator .cont-nav:disabled { opacity: 0.35; cursor: default; }
+#reader-view.comic-continuous .page-indicator .cont-nav { display: inline-block; }
 
 /* ── Scan Banner ───────────────────────────────────────────── */
 .scan-banner {
@@ -1233,11 +1243,14 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
     <button class="comic-nav next" onclick="comicNext()"></button>
     <div id="comic-scroll"></div>
     <div class="page-indicator" id="comic-page-info">
+      <button class="cont-nav" id="comic-cont-prev" onclick="comicChapterStep(-1)" title="Chapitre précédent (←)">‹</button>
       <input type="number" id="comic-page-input" min="1" inputmode="numeric"
              onkeydown="if(event.key==='Enter'){comicJumpToInput();this.blur();}"
              aria-label="Numéro de page">
       <span id="comic-page-total"></span>
       <button id="comic-page-go" onclick="comicJumpToInput()" title="Aller à la page (Entrée)">↵</button>
+      <button class="cont-nav" id="comic-cont-top" onclick="comicScrollTop()" title="Revenir en haut">⤒</button>
+      <button class="cont-nav" id="comic-cont-next" onclick="comicChapterStep(1)" title="Chapitre suivant (→)">›</button>
     </div>
   </div>
 </div>
@@ -2236,6 +2249,7 @@ async function openBook(id) {
     document.getElementById('comic-container').style.display = 'none';
     document.getElementById('comic-page-info').style.display = 'none';
     document.getElementById('comic-chapter-controls').style.display = 'none';
+    document.getElementById('reader-view').classList.remove('comic-continuous');
 
     if (fmt === 'epub') {
       openEpub(id);
@@ -2725,7 +2739,10 @@ async function openComic(bookId) {
 
     // Manhua/webtoon = tall plates -> read as ONE vertical scroll, by chapter,
     // with no left/right page-flip. Normal comics keep the paged single-plate view.
+    const siblings = comicLoadSiblings(state.currentBook);
     state.comicContinuous = await comicDetectWebtoon(bookId);
+    state.comicSiblings = await siblings;
+    document.getElementById('reader-view').classList.toggle('comic-continuous', state.comicContinuous);
     if (state.comicContinuous) {
       openComicContinuous(startPage);
     } else {
@@ -2896,11 +2913,20 @@ function comicRenderChapter(chIdx, scrollToPlate) {
   const chap = chaps[chIdx];
   const bookId = state.currentBook.id;
   const scroll = document.getElementById('comic-scroll');
+  const sib = state.comicSiblings || {};
   let html = chap.idxs.map(i => `<img data-idx="${i}" src="/api/books/${bookId}/comic-page/${i}" alt="">`).join('');
-  html += (chIdx < chaps.length - 1)
-    ? `<button class="next-chapter-btn" onclick="comicChapterStep(1)">Chapitre suivant ›</button>`
-    : `<div class="end-of-manhua">— Fin —</div>`;
+  if (chIdx < chaps.length - 1) {
+    html += `<button class="next-chapter-btn" onclick="comicChapterStep(1)">Chapitre suivant ›</button>`;
+  } else if (sib.next) {
+    // One file per chapter/volume (scanlated webtoons, tomes): continue with the
+    // next book of the series instead of a dead end.
+    html += `<button class="next-chapter-btn" onclick="comicChapterStep(1)">Suivant : ${esc(sib.next.title)} ›</button>`;
+  } else {
+    html += `<div class="end-of-manhua">— Fin —</div>`;
+  }
   scroll.innerHTML = html;
+  document.getElementById('comic-cont-prev').disabled = (chIdx === 0 && !sib.prev);
+  document.getElementById('comic-cont-next').disabled = (chIdx === chaps.length - 1 && !sib.next);
   _comicSetupPrefetch(chIdx, chaps, bookId);
   document.getElementById('comic-chapter-select').value = String(chIdx);
   const container = document.getElementById('comic-container');
@@ -2952,7 +2978,46 @@ function _comicSetupPrefetch(chIdx, chaps, bookId) {
 }
 
 function comicGoToChapter(chIdx) { comicRenderChapter(chIdx, null); }
-function comicChapterStep(dir) { comicRenderChapter((state.comicChapterIdx || 0) + dir, null); }
+
+// Previous/next chapter; past the first/last chapter of this file, move to the
+// previous/next book of the series (each scanlated chapter or tome is its own file).
+function comicChapterStep(dir) {
+  const target = (state.comicChapterIdx || 0) + dir;
+  if (target >= 0 && target < (state.comicChapters || []).length) {
+    comicRenderChapter(target, null);
+    return;
+  }
+  const sib = state.comicSiblings || {};
+  const book = dir < 0 ? sib.prev : sib.next;
+  if (book) comicOpenSibling(book.id);
+}
+
+async function comicOpenSibling(id) {
+  clearTimeout(state.saveProgressTimer);
+  await saveCurrentProgress();       // keep the position reached in the current file
+  openBook(id);
+}
+
+function comicScrollTop() {
+  document.getElementById('comic-container').scrollTop = 0;
+}
+
+// Books immediately before/after this one in its series (series_index order).
+// Series split into sub-collections are not navigated (no flat order).
+async function comicLoadSiblings(book) {
+  const none = { prev: null, next: null };
+  if (!book || !book.series) return none;
+  try {
+    const r = await fetch(`/api/collections/${encodeURIComponent(book.series)}`);
+    const d = await r.json();
+    const list = (d.type === 'books' && Array.isArray(d.books)) ? d.books : [];
+    const i = list.findIndex(b => b.id === book.id);
+    if (i < 0) return none;
+    return { prev: list[i - 1] || null, next: list[i + 1] || null };
+  } catch (e) {
+    return none;
+  }
+}
 
 function comicUpdateIndicator(globalIdx) {
   const inp = document.getElementById('comic-page-input');
