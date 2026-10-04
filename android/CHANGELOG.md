@@ -1,5 +1,26 @@
 # Changelog — BookHaven Android
 
+## [1.11.0] - 2026-10-04
+
+### Added
+- **Pré-cache des chapitres suivants** (R98, mêmes règles que le web) : une fois le
+  chapitre en cours en cache, le lecteur webtoon télécharge les pages des k
+  chapitres suivants de la série (2 premières bandes de chacun d'abord) dans le
+  cache disque LRU partagé de 500 Mo ; le chapitre suivant s'ouvre depuis le
+  disque. Budget de 400 Mo de chapitres complets (au-delà : 2 premières bandes).
+  Annulé en quittant le lecteur.
+- **Réglages → Webtoon / manhua** : nombre de chapitres préchargés (0–5, défaut 3) et
+  option **« Télécharger aussi ces chapitres pour le hors-ligne »** (désactivée par
+  défaut) limitée à **2 Go** de téléchargements au total et à 500 Mo d'espace libre
+  minimum.
+
+### Fixed
+- Téléchargement écrit dans un fichier `.part` renommé à la fin : un téléchargement
+  interrompu ne laisse plus de fichier tronqué.
+
+### Changed
+- versionCode 70, versionName 1.11.0. Tests JVM `ChapterPrecacheTest` (7). APK buildé.
+
 ## [1.10.1] - 2026-10-04
 
 ### Changed

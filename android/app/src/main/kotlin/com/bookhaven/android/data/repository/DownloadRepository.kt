@@ -35,8 +35,17 @@ class DownloadRepository @Inject constructor(
         withContext(Dispatchers.IO) {
             val dir = context.getExternalFilesDir("books") ?: context.filesDir
             val file = File(dir, "${book.id}.${book.format}")
-            api.downloadBook(book.id).byteStream().use { input ->
-                file.outputStream().use { output -> input.copyTo(output) }
+            // Write to a temporary file and rename once complete: an interrupted
+            // download (network, cancelled read-ahead) never leaves a half file.
+            val part = File(dir, "${book.id}.${book.format}.part")
+            try {
+                api.downloadBook(book.id).byteStream().use { input ->
+                    part.outputStream().use { output -> input.copyTo(output) }
+                }
+                if (file.exists()) file.delete()
+                if (!part.renameTo(file)) throw java.io.IOException("rename failed: $part")
+            } finally {
+                if (part.exists()) part.delete()
             }
             val entity = DownloadedBook(
                 bookId = book.id, title = book.title, author = book.author,
@@ -48,6 +57,9 @@ class DownloadRepository @Inject constructor(
             entity
         }
     }
+
+    /** Total size of the offline copies (download-ahead space limit). */
+    suspend fun downloadedBytes(): Long = downloadedBookDao.getAll().sumOf { it.fileSize }
 
     suspend fun deleteDownload(bookId: Int) {
         val entity = downloadedBookDao.getById(bookId) ?: return

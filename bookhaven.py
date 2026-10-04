@@ -8,6 +8,7 @@ import uuid
 import shutil
 import zipfile
 import hashlib
+from collections import OrderedDict
 import logging
 import threading
 import mimetypes
@@ -45,7 +46,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.9.1"
+__version__ = "2.10.0"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -745,6 +746,7 @@ def api_book_detail(book_id):
         result["content_version"] = _content_version(result.get("file_size"), result.get("modified_at"))
         result["webtoon"] = _is_webtoon(conn, result)
         result["series_prev"], result["series_next"] = _series_siblings(conn, result)
+        result["series_following"] = _series_following(conn, result)
 
         # Get user's reading progress
         progress = conn.execute(
@@ -803,6 +805,28 @@ def _series_siblings(conn, book):
     prev = dict(rows[i - 1]) if i > 0 else None
     nxt = dict(rows[i + 1]) if i + 1 < len(rows) else None
     return prev, nxt
+
+
+SERIES_FOLLOWING_MAX = 5   # upper bound of chapters a reader may pre-cache ahead
+
+
+def _series_following(conn, book, limit=SERIES_FOLLOWING_MAX):
+    """Next books of the same series and sub-collection after this one, in
+    series_index then title order (at most `limit`), with their file size so the
+    reader can keep its pre-cache within a byte budget."""
+    series = book.get("series") or ""
+    if not series:
+        return []
+    rows = conn.execute("""
+        SELECT id, title, format, file_size FROM books
+        WHERE series = ? AND COALESCE(sub_series, '') = ? AND COALESCE(sub_series_2, '') = ?
+        ORDER BY series_index ASC, title COLLATE NOCASE ASC, id ASC
+    """, (series, book.get("sub_series") or "", book.get("sub_series_2") or "")).fetchall()
+    ids = [r["id"] for r in rows]
+    if book["id"] not in ids:
+        return []
+    i = ids.index(book["id"])
+    return [dict(r) for r in rows[i + 1:i + 1 + limit]]
 
 
 def _fixup_epub_images(epub_path):
@@ -1690,20 +1714,42 @@ def api_comic_pages(book_id):
     if book["format"] == "mobi":
         count = _mobi_page_count(resolved_path)
         return jsonify({"pages": list(range(count)), "total": count, "content_version": cver})
-    pages = _list_comic_pages(resolved_path, book["format"])
+    pages = _cached_comic_pages(resolved_path, book["format"])
     return jsonify({"pages": pages, "total": len(pages), "content_version": cver})
 
 
 @app.route("/api/books/<int:book_id>/comic-page/<int:page_num>")
 @login_required
 def api_comic_page(book_id, page_num):
-    """Serve a single comic page image."""
+    """Serve a single comic page image.
+
+    Cacheable so readers can pre-cache upcoming chapters: every page carries an
+    ETag (book, page, content version) and a request whose ?v= matches the
+    current content_version is immutable for a year (a rebuilt archive changes
+    the version, hence the URL). Unversioned requests revalidate (304).
+    """
     conn = database.get_db()
-    book = conn.execute("SELECT path, format FROM books WHERE id = ?", (book_id,)).fetchone()
+    book = conn.execute("SELECT path, format, file_size, modified_at FROM books WHERE id = ?",
+                        (book_id,)).fetchone()
     conn.close()
 
     if not book:
         abort(404)
+
+    cver = _content_version(book["file_size"], book["modified_at"])
+    etag = '"p%s"' % hashlib.md5(f"{book_id}:{page_num}:{cver}".encode()).hexdigest()[:20]
+    cache_control = ("private, max-age=31536000, immutable" if request.args.get("v") == cver
+                     else "private, no-cache")
+    if etag in request.headers.get("If-None-Match", ""):
+        resp = Response(status=304)
+        resp.headers["ETag"] = etag
+        resp.headers["Cache-Control"] = cache_control
+        return resp
+
+    def _cached(resp):
+        resp.headers["ETag"] = etag
+        resp.headers["Cache-Control"] = cache_control
+        return resp
 
     resolved_path = _resolve_book_path(book["path"])
 
@@ -1719,12 +1765,12 @@ def api_comic_page(book_id, page_num):
             pix = page.get_pixmap(matrix=fitz.Matrix(2, 2))
             data = pix.tobytes("jpeg")
             doc.close()
-            return send_file(BytesIO(data), mimetype="image/jpeg")
+            return _cached(send_file(BytesIO(data), mimetype="image/jpeg"))
         except Exception as e:
             logger.error(f"Error serving MOBI page: {e}")
             abort(500)
 
-    pages = _list_comic_pages(resolved_path, book["format"])
+    pages = _cached_comic_pages(resolved_path, book["format"])
     if page_num < 0 or page_num >= len(pages):
         abort(404)
 
@@ -1738,7 +1784,7 @@ def api_comic_page(book_id, page_num):
             abort(415)
         with archive:
             data = archive.read(page_name)
-        return send_file(BytesIO(data), mimetype=mime)
+        return _cached(send_file(BytesIO(data), mimetype=mime))
     except Exception as e:
         logger.error(f"Error serving comic page: {e}")
         abort(500)
@@ -1772,6 +1818,34 @@ def _mobi_page_count(path):
         return count
     except Exception:
         return 0
+
+
+# Sorted page names per archive, keyed by (path, size, mtime) so a rewritten file
+# is re-listed. Listing a big archive (8 000-page manhua) cost ~0.1-0.2 s on EVERY
+# page request; a bounded LRU of small name lists makes it a dict lookup.
+_PAGE_LIST_CACHE_MAX = 64
+_page_list_cache = OrderedDict()
+_page_list_lock = threading.Lock()
+
+
+def _cached_comic_pages(path, fmt):
+    try:
+        st = os.stat(path)
+    except OSError:
+        return []
+    key = (path, fmt, st.st_size, st.st_mtime)
+    with _page_list_lock:
+        pages = _page_list_cache.get(key)
+        if pages is not None:
+            _page_list_cache.move_to_end(key)
+            return pages
+    pages = _list_comic_pages(path, fmt)
+    if pages:
+        with _page_list_lock:
+            _page_list_cache[key] = pages
+            while len(_page_list_cache) > _PAGE_LIST_CACHE_MAX:
+                _page_list_cache.popitem(last=False)
+    return pages
 
 
 def _list_comic_pages(path, fmt):

@@ -68,6 +68,8 @@ class ComicReaderFragment : Fragment() {
 
     companion object {
         private const val MAX_PREFETCH = 200   // safety cap on plates warmed ahead (files only)
+        const val PREF_PRECACHE = "precache_chapters"          // chapters pre-cached ahead (0..5)
+        const val PREF_DOWNLOAD_AHEAD = "download_ahead"       // also download them for offline
         private const val WEBTOON_SAMPLE = 4   // plates sampled by detectWebtoon()
 
         /**
@@ -252,6 +254,7 @@ class ComicReaderFragment : Fragment() {
         // book would drop from 100 % to the % of its last plate's top).
         renderChapter(chapterOfPlate(startPlate), startPlate, startFrac, save = false)
         startPrefetchLoop()      // warm up to one chapter ahead as the user reads
+        startSeriesPrecache()    // and the next chapters (files) of the series
     }
 
     private fun buildChapters(pages: List<String>): List<Chapter> {
@@ -374,6 +377,59 @@ class ComicReaderFragment : Fragment() {
 
     @Volatile private var readAnchor = 0     // global index of the top-visible plate
     private var prefetchLoop: Job? = null
+    private var seriesPrecache: Job? = null
+
+    /**
+     * Multi-chapter pre-cache (same rules as the web): once the current chapter's
+     * strips are in the disk cache, warm the next k chapter files of the series
+     * (first strips of each first, then the rest) into the shared 500 MB LRU page
+     * cache, so opening the next chapter reads from disk. Optionally (Settings)
+     * also download them for offline reading, within space limits. Runs in the
+     * reader's lifecycle scope: leaving the reader cancels it.
+     */
+    private fun startSeriesPrecache() {
+        val k = ComicReaderLogic.precacheCount(prefs.getInt(PREF_PRECACHE, ComicReaderLogic.PRECACHE_DEFAULT))
+        val upcoming = (detail?.seriesFollowing ?: emptyList())
+            .filter { it.format == "cbz" || it.format == "cbr" }.take(k)
+        if (upcoming.isEmpty()) return
+        seriesPrecache?.cancel()
+        val appCtx = requireContext().applicationContext   // never touch the Fragment from IO
+        seriesPrecache = viewLifecycleOwner.lifecycleScope.launch(Dispatchers.IO) {
+            // 1. Never compete with the chapter being read.
+            chapters.getOrNull(chapterIdx)?.idxs?.forEach { if (!isActive) return@launch; source.pageFile(it) }
+            // 2. Page lists of the upcoming chapters (online only).
+            val sources = LinkedHashMap<Int, ComicPageSource>()
+            val counts = ArrayList<Pair<Int, Int>>()
+            val sizes = ArrayList<Long>()
+            for (ref in upcoming) {
+                if (!isActive) return@launch
+                val resp = runCatching { api.getComicPages(ref.id) }.getOrNull() ?: continue
+                sources[ref.id] = ComicPageSource(appCtx, ref.id, api,
+                                                  null, resp.contentVersion, resp.pages)
+                counts.add(ref.id to resp.pages.size)
+                sizes.add(ref.fileSize)
+            }
+            // 3. Warm the page cache: first strips of every chapter, then the rest.
+            for ((id, page) in ComicReaderLogic.precacheQueue(
+                    counts, whole = ComicReaderLogic.wholeChapters(sizes))) {
+                if (!isActive) return@launch
+                sources[id]?.pageFile(page)
+            }
+            // 4. Optional offline download ahead.
+            if (!prefs.getBoolean(PREF_DOWNLOAD_AHEAD, false)) return@launch
+            for (ref in upcoming) {
+                if (!isActive) return@launch
+                val book = runCatching { api.getBookDetail(ref.id) }.getOrNull() ?: continue
+                val free = (appCtx.getExternalFilesDir("books") ?: appCtx.filesDir).usableSpace
+                if (ComicReaderLogic.shouldDownloadAhead(
+                        enabled = true, alreadyDownloaded = downloadRepo.isDownloaded(ref.id),
+                        bookBytes = book.fileSize, downloadedBytes = downloadRepo.downloadedBytes(),
+                        freeBytes = free)) {
+                    downloadRepo.downloadBook(book)
+                }
+            }
+        }
+    }
 
     private fun setupScrollTracking() {
         b.rvContinuous.addOnScrollListener(object : RecyclerView.OnScrollListener() {

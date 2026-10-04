@@ -5,6 +5,44 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.0] - 2026-10-04
+
+### Added
+- **Pré-cache de plusieurs chapitres pour les webtoons** (demande utilisateur, R98).
+  Pendant la lecture du chapitre N (un fichier par chapitre), le lecteur précharge
+  en arrière-plan les chapitres N+1 à N+k de la série dans le cache HTTP du
+  navigateur, pour un passage au chapitre suivant instantané :
+  - k réglable (`localStorage['bookhaven.precacheChapters']`, défaut **3**, 0 = désactivé,
+    max 5) ;
+  - démarre seulement quand le chapitre en cours est entièrement chargé, **une
+    requête à la fois** pendant les temps morts, les **2 premières bandes de chaque
+    chapitre d'abord** puis le reste chapitre par chapitre, rien en mode « économie
+    de données » ;
+  - **annulé** (file + requête en cours) dès qu'on quitte le lecteur ou change de
+    livre ; repart du nouveau chapitre quand on avance ;
+  - **budget de 400 Mo** de chapitres complets (le suivant toujours entier) : au-delà,
+    seules leurs 2 premières bandes sont préchargées (les tomes webtoon pèsent
+    ~130 Mo chacun).
+- `GET /api/books/<id>` expose `series_following` (jusqu'à 5 livres suivants, avec
+  leur taille).
+
+### Changed
+- **Pages de comics cachables** : chaque page a un `ETag` (livre, page, version du
+  contenu) ; avec `?v=<content_version>` (URLs utilisées par le lecteur) elle est
+  servie `private, max-age=31536000, immutable` (une archive reconstruite change de
+  version donc d'URL), sinon revalidée (304). Avant, `no-cache` sans validateur :
+  chaque affichage re-téléchargeait la page.
+- **Liste des pages d'une archive mise en cache** (LRU de 64 archives, invalidée si
+  le fichier change) : elle était relue à chaque page (≈ 0,1–0,2 s par page sur le
+  manhua de 8 018 pages). Pas de pré-extraction sur disque : l'accès à une page de
+  CBZ est direct (index ZIP), donc aucune explosion disque côté serveur.
+- **Mesure** (Wi-Fi simulé 40 Mbit/s, 20 ms ; temps d'apparition de la 1re bande du
+  chapitre suivant après 25 s de lecture) : voir la section de mesure du rapport de
+  livraison ; test bout en bout : chapitre suivant affiché **sans aucune requête de
+  page au serveur**.
+- **`__version__` 2.9.1 → 2.10.0.** Tag de retour : `pre-chapter-precache-2.9.1`.
+  Tests : `tests/test_chapter_precache_{server,web,e2e}.py`.
+
 ## [2.9.1] - 2026-10-04
 
 ### Added

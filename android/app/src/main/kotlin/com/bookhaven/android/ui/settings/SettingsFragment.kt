@@ -6,6 +6,7 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
+import android.widget.SeekBar
 import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.fragment.app.Fragment
@@ -13,6 +14,8 @@ import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.bookhaven.android.BuildConfig
 import com.bookhaven.android.databinding.FragmentSettingsBinding
+import com.bookhaven.android.ui.reader.ComicReaderFragment
+import com.bookhaven.android.ui.reader.ComicReaderLogic
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -45,6 +48,25 @@ class SettingsFragment : Fragment() {
         }
 
         b.btnScan.setOnClickListener { vm.triggerScan() }
+
+        // Webtoon reading: chapters pre-cached ahead + optional offline download ahead.
+        val k = ComicReaderLogic.precacheCount(
+            prefs.getInt(ComicReaderFragment.PREF_PRECACHE, ComicReaderLogic.PRECACHE_DEFAULT))
+        b.sbPrecache.max = ComicReaderLogic.PRECACHE_MAX
+        b.sbPrecache.progress = k
+        b.tvPrecache.text = "Chapitres préchargés : $k"
+        b.sbPrecache.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {
+                b.tvPrecache.text = if (value == 0) "Chapitres préchargés : désactivé" else "Chapitres préchargés : $value"
+                if (fromUser) prefs.edit().putInt(ComicReaderFragment.PREF_PRECACHE, value).apply()
+            }
+            override fun onStartTrackingTouch(sb: SeekBar) {}
+            override fun onStopTrackingTouch(sb: SeekBar) {}
+        })
+        b.swDownloadAhead.isChecked = prefs.getBoolean(ComicReaderFragment.PREF_DOWNLOAD_AHEAD, false)
+        b.swDownloadAhead.setOnCheckedChangeListener { _, on ->
+            prefs.edit().putBoolean(ComicReaderFragment.PREF_DOWNLOAD_AHEAD, on).apply()
+        }
 
         b.btnCreateUser.setOnClickListener {
             val et = EditText(requireContext()).apply { hint = "Username"; setPadding(48, 32, 48, 32) }

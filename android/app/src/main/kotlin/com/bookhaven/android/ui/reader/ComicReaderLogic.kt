@@ -54,6 +54,53 @@ internal object ComicReaderLogic {
         object None : ChapterStep
     }
 
+    // ── Multi-chapter pre-cache (same rules as the web) ─────────────────────
+    const val PRECACHE_DEFAULT = 3
+    const val PRECACHE_MAX = 5
+    const val PRECACHE_FIRST = 2
+    const val PRECACHE_BUDGET_BYTES = 400L * 1024 * 1024             // whole chapters pre-cached
+    const val DOWNLOAD_AHEAD_LIMIT_BYTES = 2L * 1024 * 1024 * 1024   // offline downloads total
+    const val DOWNLOAD_AHEAD_MIN_FREE_BYTES = 500L * 1024 * 1024     // keep the device usable
+
+    /** Chapters pre-cached ahead: the preference clamped to 0 (off)..PRECACHE_MAX. */
+    fun precacheCount(pref: Int): Int = pref.coerceIn(0, PRECACHE_MAX)
+
+    /**
+     * Download order for the upcoming chapters [(bookId, pageCount)] already limited
+     * to k: the first [first] strips of every chapter (what shows on arrival), then
+     * the remaining strips chapter by chapter. Returns (bookId, pageIndex).
+     */
+    fun precacheQueue(
+        chapters: List<Pair<Int, Int>>, first: Int = PRECACHE_FIRST,
+        whole: List<Boolean> = chapters.map { true },
+    ): List<Pair<Int, Int>> {
+        val out = ArrayList<Pair<Int, Int>>()
+        for ((id, n) in chapters) for (i in 0 until minOf(first, n)) out.add(id to i)
+        chapters.forEachIndexed { c, (id, n) -> if (whole[c]) for (i in first until n) out.add(id to i) }
+        return out
+    }
+
+    /**
+     * Which upcoming chapters are pre-cached WHOLE: the next one always, the others
+     * while their total size fits the byte budget (others get their first strips only).
+     */
+    fun wholeChapters(sizes: List<Long>, budget: Long = PRECACHE_BUDGET_BYTES): List<Boolean> {
+        var left = budget
+        return sizes.mapIndexed { i, size ->
+            val take = i == 0 || size <= left
+            if (take) left -= size
+            take
+        }
+    }
+
+    /** Optional offline download of an upcoming chapter, within the space limits. */
+    fun shouldDownloadAhead(
+        enabled: Boolean, alreadyDownloaded: Boolean, bookBytes: Long,
+        downloadedBytes: Long, freeBytes: Long,
+        limitBytes: Long = DOWNLOAD_AHEAD_LIMIT_BYTES, minFreeBytes: Long = DOWNLOAD_AHEAD_MIN_FREE_BYTES,
+    ): Boolean = enabled && !alreadyDownloaded && bookBytes > 0 &&
+        downloadedBytes + bookBytes <= limitBytes && freeBytes - bookBytes >= minFreeBytes
+
     /** Previous/next chapter of this file, then previous/next book of the series. */
     fun chapterStep(
         chapterIdx: Int, dir: Int, chapterCount: Int,

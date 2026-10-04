@@ -78,6 +78,35 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
+            android:text="Webtoon / manhua"
+            android:textAppearance="?attr/textAppearanceOverline"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:id="@+id/tvPrecache"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Chapitres préchargés : 3" />
+
+        <SeekBar
+            android:id="@+id/sbPrecache"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:max="5" />
+
+        <com.google.android.material.switchmaterial.SwitchMaterial
+            android:id="@+id/swDownloadAhead"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:text="Télécharger aussi ces chapitres pour le hors-ligne (2 Go max)" />
+
+        <View android:layout_width="match_parent" android:layout_height="1dp"
+            android:background="#DDDDDD" android:layout_marginVertical="16dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
             android:text="Account"
             android:textAppearance="?attr/textAppearanceOverline"
             android:layout_marginBottom="8dp" />

@@ -32,14 +32,17 @@ data class Book(
     // Book detail only: manhua / manhwa / webtoon = always the continuous vertical reader.
     @SerializedName("webtoon") val webtoon: Boolean = false,
     @SerializedName("series_prev") val seriesPrev: SeriesRef? = null,
-    @SerializedName("series_next") val seriesNext: SeriesRef? = null
+    @SerializedName("series_next") val seriesNext: SeriesRef? = null,
+    // Next books of the series (at most 5): what the webtoon reader pre-caches.
+    @SerializedName("series_following") val seriesFollowing: List<SeriesRef>? = null
 )
 
 /** Previous / next book of the same series (GET /api/books/<id>). */
 data class SeriesRef(
     @SerializedName("id") val id: Int,
     @SerializedName("title") val title: String = "",
-    @SerializedName("format") val format: String = ""
+    @SerializedName("format") val format: String = "",
+    @SerializedName("file_size") val fileSize: Long = 0L     // series_following only (pre-cache budget)
 )
 
 /** Reads a progress percentage from a number, an object holding "progress", or null. */

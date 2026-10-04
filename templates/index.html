@@ -2249,6 +2249,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── Open Book ───────────────────────────────────────────────
 async function openBook(id) {
+  comicStopPrecache();               // a pre-cache belongs to the book being left
   try {
     const r = await fetch(`/api/books/${id}`);
     state.currentBook = await r.json();
@@ -2285,6 +2286,7 @@ async function openBook(id) {
 }
 
 async function closeReader() {
+  comicStopPrecache();
   // Flush any pending debounced save immediately
   clearTimeout(state.saveProgressTimer);
   // Webtoon: save the exact scroll position reached (finished if at the end),
@@ -2751,6 +2753,7 @@ async function openComic(bookId) {
     const r = await fetch(`/api/books/${bookId}/comic-pages`);
     const data = await r.json();
     state.comicPages = data.pages;
+    state.comicVersion = data.content_version || '';
 
     // Restore progress: a plate index (paged) or "plate.fraction" (webtoon scroll position)
     const prog = state.currentBook.progress;
@@ -2769,6 +2772,7 @@ async function openComic(bookId) {
       // Keep the stored percentage on open (a finished book stays at 100 %);
       // only actual scrolling recomputes it.
       openComicContinuous(comicParseLocation(startLoc), startLoc ? prog.progress : null);
+      comicStartPrecache(state.currentBook);   // next chapters of the series, in the background
     } else {
       container.classList.remove('continuous');
       document.getElementById('comic-chapter-controls').style.display = 'none';
@@ -2840,7 +2844,7 @@ function showComicPage() {
   const page = state.comicCurrentPage;
   const total = state.comicPages.length;
   const img = document.getElementById('comic-img');
-  img.src = `/api/books/${bookId}/comic-page/${page}`;
+  img.src = comicPageUrl(bookId, page);
   // Every page change (buttons, side zones, arrow keys, swipe, page jump) lands
   // here: the new page starts at its TOP-left. Tall pages used to keep the
   // previous page's scroll offset, so "next" from the bottom opened the next
@@ -2874,6 +2878,108 @@ function comicJumpToInput() {
   }
 }
 
+// Page URL. With the archive's content_version the server answers "immutable":
+// the browser HTTP cache can then serve pre-cached chapters with no request,
+// and a rebuilt archive (new version) gets a new URL.
+function comicPageUrl(bookId, i, version) {
+  const v = (version === undefined) ? (state.currentBook && state.currentBook.id === bookId ? state.comicVersion : '') : version;
+  return `/api/books/${bookId}/comic-page/${i}` + (v ? `?v=${encodeURIComponent(v)}` : '');
+}
+
+// ── Multi-chapter pre-cache (webtoon series, one file per chapter) ──────
+// While chapter N is read, the next k chapters of the series (book detail
+// series_following) are fetched into the browser HTTP cache so moving on is
+// instant. Polite by design: starts only once chapter N is fully loaded, one
+// request at a time on idle, the first 2 strips of every chapter first (what
+// shows on arrival) then the rest chapter by chapter, nothing on Save-Data, and
+// everything (queue + in-flight request) is cancelled when the reader leaves.
+// k: localStorage 'bookhaven.precacheChapters' (0 = off), default 3, max 5.
+// Byte budget: whole chapters are pre-cached while their total file size stays
+// under COMIC_PRECACHE_BUDGET (webtoon tomes can weigh 130 MB each); beyond it
+// only their first strips are fetched, so arrival stays instant without
+// downloading hundreds of MB.
+const COMIC_PRECACHE_DEFAULT = 3, COMIC_PRECACHE_MAX = 5, COMIC_PRECACHE_FIRST = 2;
+const COMIC_PRECACHE_BUDGET = 400 * 1024 * 1024;
+let _comicPrecache = null;
+
+function comicPrecacheCount() {
+  let k = COMIC_PRECACHE_DEFAULT;
+  try {
+    const v = localStorage.getItem('bookhaven.precacheChapters');
+    if (v !== null && !isNaN(parseInt(v, 10))) k = parseInt(v, 10);
+  } catch (e) {}
+  return Math.max(0, Math.min(COMIC_PRECACHE_MAX, k));
+}
+
+function comicStopPrecache() {
+  if (!_comicPrecache) return;
+  _comicPrecache.cancelled = true;
+  try { _comicPrecache.abort.abort(); } catch (e) {}
+  _comicPrecache = null;
+}
+
+// Observable state (tests, debugging): books targeted, queued/done counts.
+function comicPrecacheStatus() {
+  const j = _comicPrecache;
+  return j ? { running: !j.cancelled, books: j.books.slice(), whole: (j.whole || []).slice(),
+               queued: j.queued, done: j.done, finished: j.finished }
+           : { running: false, books: [], whole: [], queued: 0, done: 0, finished: false };
+}
+
+async function comicStartPrecache(book) {
+  comicStopPrecache();
+  const k = comicPrecacheCount();
+  const upcoming = ((book && book.series_following) || [])
+    .filter(b => b.format === 'cbz' || b.format === 'cbr').slice(0, k);
+  if (!upcoming.length || (navigator.connection && navigator.connection.saveData)) return;
+  const job = { cancelled: false, abort: new AbortController(), books: upcoming.map(b => b.id),
+                queued: 0, done: 0, finished: false };
+  _comicPrecache = job;
+  const idle = () => new Promise(r => (typeof requestIdleCallback !== 'undefined')
+    ? requestIdleCallback(r, { timeout: 1000 }) : setTimeout(r, 50));
+  // 1. Never compete with the chapter being read: wait until it is fully loaded.
+  const deadline = Date.now() + 60000;
+  while (!job.cancelled && Date.now() < deadline) {
+    const imgs = [...document.querySelectorAll('#comic-scroll img[data-idx]')];
+    if (imgs.length && imgs.every(i => i.complete)) break;
+    await new Promise(r => setTimeout(r, 300));
+  }
+  if (job.cancelled) return;
+  try {
+    // 2. Page lists of the upcoming chapters.
+    const lists = [];
+    for (const b of upcoming) {
+      const r = await fetch(`/api/books/${b.id}/comic-pages`, { signal: job.abort.signal });
+      if (job.cancelled) return;
+      if (!r.ok) continue;
+      const d = await r.json();
+      lists.push({ id: b.id, n: (d.pages || []).length, v: d.content_version || '', size: b.file_size || 0 });
+    }
+    let budget = COMIC_PRECACHE_BUDGET;
+    lists.forEach((l, idx) => {           // the next chapter is always taken whole
+      l.whole = idx === 0 || l.size <= budget;
+      if (l.whole) budget -= l.size;
+    });
+    job.whole = lists.filter(l => l.whole).map(l => l.id);
+    // 3. Queue: first strips of every chapter, then the rest chapter by chapter.
+    const queue = [];
+    lists.forEach(l => { for (let i = 0; i < Math.min(COMIC_PRECACHE_FIRST, l.n); i++) queue.push([l, i]); });
+    lists.forEach(l => { if (l.whole) for (let i = COMIC_PRECACHE_FIRST; i < l.n; i++) queue.push([l, i]); });
+    job.queued = queue.length;
+    for (const [l, i] of queue) {
+      if (job.cancelled) return;
+      await idle();
+      if (job.cancelled) return;
+      const r = await fetch(comicPageUrl(l.id, i, l.v), { signal: job.abort.signal, credentials: 'same-origin' });
+      await r.arrayBuffer();         // body read -> stored in the HTTP cache, then dropped
+      job.done++;
+    }
+    job.finished = true;
+  } catch (e) {
+    // aborted (reader left) or network error: just stop, reading is unaffected
+  }
+}
+
 // ── Continuous (webtoon) comic reader ────────────────────────
 // Tall-plate content reads as one vertical scroll per chapter, with chapter
 // navigation and NO page-flip. Chapters are derived from the plate filenames
@@ -2900,7 +3006,7 @@ function comicDetectWebtoon(bookId) {
     const img = new Image();
     img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
     img.onerror = () => resolve(null);
-    img.src = `/api/books/${bookId}/comic-page/${i}`;
+    img.src = comicPageUrl(bookId, i);
   });
   return Promise.all(Array.from({ length: n }, (_, i) => probe(i))).then(comicIsWebtoonDims);
 }
@@ -3023,7 +3129,7 @@ function comicRenderChapter(chIdx, scrollTo, startPct) {
   const bookId = state.currentBook.id;
   const scroll = document.getElementById('comic-scroll');
   const sib = state.comicSiblings || {};
-  let html = chap.idxs.map(i => `<img data-idx="${i}" src="/api/books/${bookId}/comic-page/${i}" alt="">`).join('');
+  let html = chap.idxs.map(i => `<img data-idx="${i}" src="${comicPageUrl(bookId, i)}" alt="">`).join('');
   if (chIdx < chaps.length - 1) {
     html += `<button class="next-chapter-btn" onclick="comicChapterStep(1)">Chapitre suivant ›</button>`;
   } else if (sib.next) {
@@ -3080,7 +3186,7 @@ function _comicSetupPrefetch(chIdx, chaps, bookId) {
     let k = 0;
     const warmNext = () => {
       if (token !== _comicWarmToken || k >= next.idxs.length) return;   // moved on / done
-      const im = new Image(); im.src = `/api/books/${bookId}/comic-page/${next.idxs[k++]}`;
+      const im = new Image(); im.src = comicPageUrl(bookId, next.idxs[k++]);
       idle(warmNext);                        // one image per idle tick → no burst
     };
     idle(warmNext);
