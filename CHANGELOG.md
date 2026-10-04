@@ -5,6 +5,35 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.10.1] - 2026-10-04
+
+### Fixed
+- **« Chapitre suivant » n'ouvrait pas le chapitre en haut** (webtoon, web ; R99).
+  Reproduit sur le serveur réel (Ragnarok, desktop + mobile) : un chapitre sans
+  progression s'ouvrait bien en haut, mais un chapitre **déjà entamé ou terminé**
+  rouvrait à sa position enregistrée (ex. ch. 26 → ch. 27 terminé : arrivée à la
+  fin du ch. 27). Règle désormais :
+  - **navigation** (bouton de fin « Suivant : … › », › ‹ du bas, flèches → ←) =
+    toujours **en haut** du chapitre suivant ou précédent, même pré-caché, même
+    avec une progression ;
+  - sa progression enregistrée n'est **ni reprise ni écrasée** tant que le lecteur
+    ne défile pas (un chapitre terminé revisité reste terminé, et la position du
+    chapitre précédent n'est plus jamais enregistrée sur le nouveau) ;
+  - **reprise exacte** conservée pour une ouverture volontaire (Continue Reading,
+    fiche, bibliothèque).
+- La position d'arrivée (haut compris) est **maintenue pendant le chargement des
+  bandes**, y compris quand des bandes pré-cachées s'affichent avant la mise en
+  page : plus de décalage hérité du chapitre précédent. Ce décalage rendait
+  instable le test `test_continuous_mode_navigates_the_series` (≈ 1 échec sur 3
+  exécutions de la suite complète avant correctif).
+- `history.scrollRestoration = 'manual'` : le navigateur ne restaure plus de
+  défilement de lui-même.
+
+### Changed
+- **`__version__` 2.10.0 → 2.10.1.** Tag de retour : `pre-next-chapter-top-2.10.0`.
+  Tests : `tests/test_next_chapter_top_e2e.py` (vrai serveur, pré-cache actif,
+  desktop + mobile).
+
 ## [2.10.0] - 2026-10-04
 
 ### Added
