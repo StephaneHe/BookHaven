@@ -2253,12 +2253,17 @@ document.addEventListener('DOMContentLoaded', () => {
 async function openBook(id, opts) {
   comicStopPrecache();               // a pre-cache belongs to the book being left
   state._openFromNav = !!(opts && opts.fromNav);
+  // Remember where the library was scrolled, to come back there on close.
+  if (!document.getElementById('reader-view').classList.contains('active')) state._libraryScrollY = window.scrollY;
   try {
     const r = await fetch(`/api/books/${id}`);
     state.currentBook = await r.json();
     document.getElementById('reader-title').textContent = state.currentBook.title;
     location.hash = '';
     showView('reader-view');
+    // The page itself may still be scrolled from the library: the reader's top
+    // bar (back button, controls) would start partly off screen.
+    window.scrollTo(0, 0);
 
     // Progress entry will be created by the reader (PDF/EPUB/Comic) on open
 
@@ -2328,6 +2333,7 @@ async function closeReader() {
   epubFontSize = 100;
 
   showView('library-view');
+  window.scrollTo(0, state._libraryScrollY || 0);    // back where the library was
   loadContinueReading();
 }
 

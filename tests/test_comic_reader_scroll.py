@@ -202,9 +202,14 @@ def _title(page):
 
 
 def _wait_title(page, bid):
+    # The title changes as soon as navigation starts, while the previous chapter's
+    # strips are still displayed: wait for strips of THIS book (and its end
+    # marker), or the checks that follow can run against the old chapter.
     page.wait_for_function(f"() => document.getElementById('reader-title').textContent === 'Fake {bid}'"
                            " && document.getElementById('comic-container').classList.contains('continuous')"
-                           " && document.querySelector('#comic-scroll img')", timeout=15000)
+                           f" && (i => i && i.src.includes('/books/{bid}/'))(document.querySelector('#comic-scroll img'))"
+                           " && document.querySelector('#comic-scroll .next-chapter-btn, #comic-scroll .end-of-manhua')",
+                           timeout=15000)
 
 
 @pytest.mark.parametrize("reader", ["desktop_page", "phone_page"], indirect=True)

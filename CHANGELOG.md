@@ -5,6 +5,43 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.11.0] - 2026-10-04
+
+### Added
+- **Renommer / déplacer un dossier de la bibliothèque sans recréer les livres**
+  (R101) : `library_ops.move_folder()` et `scripts/move_library_folder.py` (simulation
+  par défaut, `--apply` sauvegarde la base puis agit). Renomme le dossier sur le
+  disque puis met à jour uniquement `books.path`, en une transaction : **mêmes
+  identifiants**, progressions, Continue Reading, série, marquage webtoon, genre ;
+  `modified_at` inchangé donc `content_version` et tous les caches qui en dépendent
+  (cache HTTP du navigateur, cache de pages Android) restent valides. Les
+  couvertures (nommées d'après le chemin) sont copiées sous leur nouveau nom avant
+  la mise à jour, les anciennes supprimées après. **Refus sans rien changer** si un
+  fichier du dossier est ouvert (lecteur en cours), si la cible existe ou sort de
+  la bibliothèque ; **annulation complète** (dossier renommé à l'envers, copies
+  supprimées) si la base échoue. Un scan ultérieur ne crée aucun doublon.
+- Appliqué : `H:\Books\Comics\Solo Leveling - Ragnarok` →
+  `H:\Books\Comics\Solo Leveling Ragnarok (Scanlated) (Void)` (47 chapitres, voir le
+  rapport de livraison ; le dossier « Solo leveling » de la série d'origine n'est
+  pas touché).
+
+### Fixed
+- **Barre du lecteur partiellement masquée après avoir fait défiler la
+  bibliothèque** (R102) : la page gardait ~39 px du défilement de la bibliothèque
+  (bouton retour et réglages hors écran, desktop et mobile). Le lecteur s'ouvre
+  désormais en haut de page et la fermeture ramène à la position de la
+  bibliothèque. Ce décalage rendait aussi `test_R41_chapter_picker` instable
+  (échec dans la suite « avant » de cette livraison).
+- Test `test_continuous_mode_navigates_the_series` fiabilisé (échec rare dans la
+  suite complète) : son attente se contentait du titre, qui change dès le début de
+  la navigation alors que les bandes du chapitre précédent sont encore affichées ;
+  elle attend maintenant les bandes du livre visé (attente renforcée, aucune
+  assertion affaiblie). Course propre au test, pas au lecteur.
+
+### Changed
+- **`__version__` 2.10.2 → 2.11.0.** Tag de retour : `pre-folder-move-2.10.2`.
+  Tests : `tests/test_library_move.py`, `tests/test_reader_page_scroll.py`.
+
 ## [2.10.2] - 2026-10-04
 
 ### Fixed
