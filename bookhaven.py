@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.8.3"
+__version__ = "2.8.4"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -1323,13 +1323,24 @@ def api_get_progress(book_id):
 @app.route("/api/books/<int:book_id>/progress", methods=["DELETE"])
 @login_required
 def api_delete_progress(book_id):
-    """Remove a book from the user's reading list."""
+    """Remove a book from the user's reading list.
+
+    Keeps a progress-0 row instead of deleting it: that row is also the dismissal
+    marker for the "up next" suggestion of /api/continue-reading. Deleting it
+    would make a removed book (or a dismissed suggestion) reappear as the next
+    volume of its series. Progress 0 never lists the book (progress > 0 filter)
+    and reopening it starts from the beginning, as before.
+    """
     try:
         with database.writing() as conn:
-            conn.execute(
-                "DELETE FROM reading_progress WHERE user_id = ? AND book_id = ?",
-                (session["user_id"], book_id)
-            )
+            if not conn.execute("SELECT 1 FROM books WHERE id = ?", (book_id,)).fetchone():
+                return jsonify({"ok": True})
+            conn.execute("""
+                INSERT INTO reading_progress (user_id, book_id, progress, current_location, last_read)
+                VALUES (?, ?, 0, '', CURRENT_TIMESTAMP)
+                ON CONFLICT(user_id, book_id) DO UPDATE SET
+                    progress = 0, current_location = '', last_read = CURRENT_TIMESTAMP
+            """, (session["user_id"], book_id))
         return jsonify({"ok": True})
     except Exception as e:
         logger.error(f"Error in api_delete_progress: {e}")
@@ -1367,22 +1378,64 @@ def api_set_progress(book_id):
         return jsonify({"ok": False, "error": "Internal server error"}), 500
 
 
+def _up_next_books(conn, user_id, reading_series):
+    """Next unread volume of each series whose latest-read book is finished."""
+    latest = {}
+    for r in conn.execute("""
+        SELECT b.series, b.series_index, b.title, rp.progress, rp.last_read
+        FROM reading_progress rp JOIN books b ON b.id = rp.book_id
+        WHERE rp.user_id = ? AND b.series IS NOT NULL AND b.series != ''
+        ORDER BY rp.last_read DESC
+    """, (user_id,)):
+        latest.setdefault(r["series"], r)      # most recently read book per series
+    out = []
+    for series, r in latest.items():
+        if r["progress"] < 100 or series in reading_series:
+            continue
+        nxt = conn.execute("""
+            SELECT * FROM books
+            WHERE series = ? AND (series_index > ?
+                  OR (series_index = ? AND title COLLATE NOCASE > ? COLLATE NOCASE))
+            ORDER BY series_index ASC, title COLLATE NOCASE ASC, id ASC
+            LIMIT 1
+        """, (series, r["series_index"], r["series_index"], r["title"] or "")).fetchone()
+        if not nxt or conn.execute(
+                "SELECT 1 FROM reading_progress WHERE user_id = ? AND book_id = ?",
+                (user_id, nxt["id"])).fetchone():
+            continue
+        book = dict(nxt)
+        book.update(progress=0, current_location="", last_read=r["last_read"], up_next=1)
+        out.append(book)
+    return out
+
+
 @app.route("/api/continue-reading")
 @login_required
 def api_continue_reading():
-    """Get books the user has started reading, ordered by last read."""
+    """Books the user has started, plus the next volume of finished series.
+
+    In-progress books (0 < progress < 100) are listed as before. For each series
+    whose most recently read book is finished, the next book of the series
+    (series_index, then title) is added with progress 0 and "up_next": 1, dated
+    by the finished book's last_read -- unless the user already has a progress
+    row for it (opened, or dismissed: see api_delete_progress) or is reading
+    another book of that series. Ordered by last read, 20 max.
+    """
     try:
         conn = database.get_db()
-        rows = conn.execute("""
+        user_id = session["user_id"]
+        rows = [dict(r) for r in conn.execute("""
             SELECT b.*, rp.progress, rp.current_location, rp.last_read
             FROM reading_progress rp
             JOIN books b ON b.id = rp.book_id
             WHERE rp.user_id = ? AND rp.progress > 0 AND rp.progress < 100
             ORDER BY rp.last_read DESC
             LIMIT 20
-        """, (session["user_id"],)).fetchall()
+        """, (user_id,)).fetchall()]
+        rows += _up_next_books(conn, user_id, {r["series"] for r in rows if r.get("series")})
         conn.close()
-        return jsonify([dict(r) for r in rows])
+        rows.sort(key=lambda r: r["last_read"] or "", reverse=True)
+        return jsonify(rows[:20])
     except Exception as e:
         logger.error(f"Error in api_continue_reading: {e}\n{traceback.format_exc()}")
         return jsonify([])

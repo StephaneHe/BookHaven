@@ -97,6 +97,16 @@ def init_db():
     except Exception:
         pass  # Column already exists
 
+    # Used by /api/collections (series split into sub-collections). The library
+    # database got them outside init_db, so a fresh database lacked them and
+    # every series page failed with "no such column: sub_series".
+    for col in ("sub_series", "sub_series_2"):
+        try:
+            conn.execute(f"ALTER TABLE books ADD COLUMN {col} TEXT DEFAULT ''")
+            conn.commit()
+        except Exception:
+            pass  # Column already exists
+
     conn.executescript("""
         -- After the collection_path migration above: on a pre-collection_path
         -- database the column only exists once the ALTER TABLE has run.

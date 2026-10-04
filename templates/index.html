@@ -157,6 +157,12 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 .continue-card .info-btn { position: absolute; top: 6px; left: 6px; z-index: 10; }
 .continue-card:hover .info-btn { opacity: 1; }
 .remove-reading:hover { background: #c00; color: #fff; }
+/* "Up next": next volume of a series whose previous volume is finished. */
+.continue-card .up-next-badge {
+  position: absolute; bottom: 30px; left: 4px;
+  background: #7c5cff; color: #fff; font-size: 10px; font-weight: 600;
+  padding: 2px 6px; border-radius: 4px;
+}
 .progress-bar {
   position: absolute; bottom: 30px; left: 4px; right: 4px;
   height: 3px; background: #333; border-radius: 2px;
@@ -1895,7 +1901,9 @@ async function loadContinueReading() {
         <button class="remove-reading" onclick="event.stopPropagation(); removeFromReading(${b.id})" title="Remove">✕</button>
         <img src="/api/books/${b.id}/cover?v=2"
              onerror="this.style.opacity='0.3'">
-        <div class="progress-bar"><div class="fill" style="width:${b.progress}%"></div></div>
+        ${b.up_next
+          ? `<span class="up-next-badge" title="Volume suivant de ${esc(b.series)}">À suivre</span>`
+          : `<div class="progress-bar"><div class="fill" style="width:${b.progress}%"></div></div>`}
         <div class="title" title="${esc(b.title)}">${esc(b.title)}</div>
       </div>
     `).join('');
@@ -2269,6 +2277,16 @@ async function openBook(id) {
 async function closeReader() {
   // Flush any pending debounced save immediately
   clearTimeout(state.saveProgressTimer);
+  // Closed right at the bottom of a webtoon chapter (before the debounced
+  // scroll tracking ran): record the chapter as read to its end.
+  if (state.comicContinuous && comicAtBottom()) {
+    const imgs = document.querySelectorAll('#comic-scroll img[data-idx]');
+    if (imgs.length) {
+      const idx = parseInt(imgs[imgs.length - 1].dataset.idx, 10);
+      state._lastProgress = Math.round(((idx + 1) / state.comicPages.length) * 100);
+      state._lastLocation = String(idx);
+    }
+  }
   await saveCurrentProgress();
   // Release prefetched EPUB resources (revokes blob: URLs, frees memory)
   _epubCacheClear();
@@ -2989,13 +3007,27 @@ function comicChapterStep(dir) {
   }
   const sib = state.comicSiblings || {};
   const book = dir < 0 ? sib.prev : sib.next;
-  if (book) comicOpenSibling(book.id);
+  if (book) comicOpenSibling(book.id, dir > 0);
 }
 
-async function comicOpenSibling(id) {
+async function comicOpenSibling(id, forward) {
   clearTimeout(state.saveProgressTimer);
+  // Moving on from the end of this file (last plate on screen) = finished, even
+  // if the debounced scroll tracking has not caught up yet.
+  const imgs = document.querySelectorAll('#comic-scroll img[data-idx]');
+  const last = imgs[imgs.length - 1];
+  if (forward && last && last.getBoundingClientRect().top < window.innerHeight) {
+    const idx = parseInt(last.dataset.idx, 10);
+    state._lastProgress = Math.round(((idx + 1) / state.comicPages.length) * 100);
+    state._lastLocation = String(idx);
+  }
   await saveCurrentProgress();       // keep the position reached in the current file
   openBook(id);
+}
+
+function comicAtBottom() {
+  const c = document.getElementById('comic-container');
+  return c.scrollHeight > c.clientHeight && c.scrollTop + c.clientHeight >= c.scrollHeight - 8;
 }
 
 function comicScrollTop() {
@@ -3036,6 +3068,10 @@ function comicOnScroll() {
     const imgs = document.querySelectorAll('#comic-scroll img[data-idx]');
     let cur = null;
     for (const im of imgs) { if (im.getBoundingClientRect().bottom > topbarBottom + 4) { cur = im; break; } }
+    // At the very bottom the last plate may never reach the top of the screen
+    // (short last plate): count the chapter as read to its end, or a finished
+    // chapter/book would never be recorded as finished (100%).
+    if (comicAtBottom() && imgs.length) cur = imgs[imgs.length - 1];
     if (!cur) return;
     const idx = parseInt(cur.dataset.idx, 10);
     comicUpdateIndicator(idx);

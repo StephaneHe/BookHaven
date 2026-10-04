@@ -5,6 +5,49 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.4] - 2026-10-04
+
+### Added
+- **« Continue Reading » propose le volume suivant d'une série terminée.** Pour
+  chaque série dont le dernier livre lu est terminé (100 %), le livre suivant
+  (`series_index`, puis titre) apparaît avec un badge **« À suivre »**
+  (`up_next: 1`, progression 0) dans `/api/continue-reading`, donc sur le web
+  **et** dans l'app Android (même API, sans mise à jour de l'app). Pas de
+  suggestion si l'utilisateur lit déjà un autre livre de la série, a déjà une
+  progression sur le suivant, ou l'a retiré de la liste.
+  *Historique* : cette suggestion n'a jamais existé dans le code (endpoint
+  inchangé depuis sa création). Les manhua importés jusqu'ici formaient **un seul
+  fichier** pour toute la série, qui restait « en cours » d'un chapitre à
+  l'autre ; « Solo Leveling: Ragnarok » (un fichier par chapitre) sortait de la
+  liste une fois un chapitre fini, sans rien à la place.
+
+### Fixed
+- **Chapitre fini en défilement continu enregistré comme terminé.** Arrivé tout en
+  bas, la dernière planche compte comme lue (même courte, quand elle ne peut pas
+  atteindre le haut de l'écran) ; idem en fermant le lecteur ou en passant au
+  chapitre suivant depuis la fin, sans attendre le suivi de défilement différé.
+- **Données réparées** : le ch. 23 de « Solo Leveling: Ragnarok » de l'utilisateur
+  était à « page 0, 9 % » alors qu'il l'avait fini. Cause : en 2.8.2, le seul
+  bouton › restant (barre du haut) ou la flèche → **ré-affichait le même chapitre
+  depuis le début** (un seul chapitre par fichier) et enregistrait la page 0
+  (corrigé en 2.8.3). Remis à « dernière page, 100 % », date de lecture inchangée,
+  sauvegarde préalable de la base dans `backup/`.
+- **Retirer un livre de la liste** garde désormais une ligne de progression à 0
+  (au lieu de la supprimer) : elle sert de marqueur de rejet pour la suggestion,
+  sinon un livre retiré réapparaîtrait comme « À suivre ». Réouverture au début,
+  comme avant.
+- **Schéma** : `init_db()` crée les colonnes `sub_series` / `sub_series_2`,
+  utilisées par `/api/collections` mais absentes d'une base neuve (page de série
+  en erreur « no such column »). Sans effet sur la base existante.
+- Tests : `tests/test_continue_reading_up_next.py` (règles de la suggestion) et
+  `tests/test_continue_reading_e2e.py` (**bout en bout** : vrai serveur sur base
+  temporaire + vrais CBZ + navigateur desktop/mobile : finir un chapitre en
+  continu → le suivant apparaît « À suivre » et s'ouvre ; « Suivant » depuis la
+  fin marque le chapitre terminé).
+
+### Changed
+- **`__version__` 2.8.3 → 2.8.4.**
+
 ## [2.8.3] - 2026-10-04
 
 ### Fixed
