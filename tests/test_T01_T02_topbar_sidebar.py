@@ -35,20 +35,38 @@ def test_T01_logo_text_visible_on_desktop(desktop_page):
     assert logo_text.is_visible(), "Logo text should be visible on desktop"
 
 
-def test_T01_scan_hidden_on_phone(phone_page):
-    """Phone: Scan button should be hidden."""
-    scan_btn = phone_page.locator("button:has-text('Scan')")
-    if scan_btn.count() == 0:
-        return  # no scan button at all is OK
-    assert not scan_btn.is_visible(), "Scan button should be hidden on phone"
+def test_T01_scan_is_icon_on_phone(phone_page):
+    """Phone: Scan stays available as a compact icon button (label hidden).
+
+    Originally T01 hid Scan on phone (`display:none`). Deliberately changed in
+    d59f1e3 (2026-04-04, pre-versioning): the button is kept on mobile as a
+    "⟳" icon (`font-size:0` label + `::before` glyph, min-width 44px).
+    """
+    scan_btn = phone_page.locator(".topbar .scan-btn")
+    assert scan_btn.count() == 1, "Topbar should have a .scan-btn"
+    assert scan_btn.is_visible(), "Scan icon button should be visible on phone"
+    box = scan_btn.bounding_box()
+    assert box["width"] <= 50, f"Scan should be a compact icon, got width={box['width']}"
+    assert max(box["width"], box["height"]) >= 40, f"Scan touch target too small: {box}"
+    label_size = scan_btn.evaluate("el => parseFloat(getComputedStyle(el).fontSize)")
+    assert label_size == 0, "Scan text label should be hidden (icon only) on phone"
 
 
-def test_T01_username_hidden_on_phone(phone_page):
-    """Phone: username text should be hidden."""
-    user_info = phone_page.locator(".user-info")
-    if user_info.count() == 0:
-        return
-    assert not user_info.is_visible(), "Username should be hidden on phone"
+def test_T01_username_truncated_on_phone(phone_page):
+    """Phone: username is shown, but truncated to a narrow chip.
+
+    Originally T01 hid the username on phone. Deliberately changed in f595dae
+    (2026-04-13, "show username on mobile"): `.user-info` is inline-block,
+    11px, max-width 60px with ellipsis. 2.7.16 (passwordless entry) still puts
+    the active profile in the topbar, so the name remains useful.
+    """
+    user_info = phone_page.locator(".topbar .user-info")
+    assert user_info.count() == 1, "Topbar should have a .user-info element"
+    assert user_info.is_visible(), "Username should be visible on phone"
+    box = user_info.bounding_box()
+    assert box["width"] <= 61, f"Username should be truncated (<=60px), got {box['width']}"
+    overflow = user_info.evaluate("el => getComputedStyle(el).textOverflow")
+    assert overflow == "ellipsis", f"Long usernames should ellipsize, got {overflow!r}"
 
 
 def test_T01_logout_is_icon_on_phone(phone_page):
@@ -70,14 +88,26 @@ def test_T01_topbar_height_phone(phone_page):
 
 
 def test_T01_search_fills_space_phone(phone_page):
-    """Phone: search box should take most of the available width (>40%)."""
-    search = phone_page.locator(".search-box")
+    """Phone: search box takes ALL the width left between logo and actions.
+
+    The original ">40% of the topbar" target predates two deliberate changes
+    that put more controls in the phone topbar: Scan kept as an icon (d59f1e3)
+    and the username shown (f595dae). At 375px the search now gets ~107px
+    (~28%). The intent that remains is `flex:1; max-width:none`: no slack
+    left in the bar, and a still-usable field.
+    """
+    search = phone_page.locator(".topbar .search-box")
+    right = phone_page.locator(".topbar .topbar-right")
     topbar = phone_page.locator(".topbar")
     s_box = search.bounding_box()
+    r_box = right.bounding_box()
     t_box = topbar.bounding_box()
-    assert s_box is not None and t_box is not None
+    assert s_box is not None and r_box is not None and t_box is not None
+    gap = topbar.evaluate("el => parseFloat(getComputedStyle(el).columnGap) || 0")
+    slack = r_box["x"] - (s_box["x"] + s_box["width"])
+    assert slack <= gap + 2, f"Search should grow into the free space, {slack:.0f}px left unused"
     ratio = s_box["width"] / t_box["width"]
-    assert ratio > 0.4, f"Search should fill >40% of topbar, got {ratio:.0%}"
+    assert ratio >= 0.25, f"Search too narrow to be usable: {ratio:.0%} of topbar"
 
 
 def test_T01_all_topbar_buttons_touch_friendly_phone(phone_page):
@@ -124,12 +154,18 @@ def test_T02_hamburger_opens_sidebar(phone_page):
     btn = phone_page.locator("#hamburger-btn")
     if btn.count() == 0:
         pytest.fail("No #hamburger-btn found — T01 must be implemented first")
-    btn.click(timeout=2000)
-    sidebar = phone_page.locator(".sidebar")
+    _ensure_sidebar_closed(phone_page)
     try:
+        btn.click(timeout=2000)
+        sidebar = phone_page.locator(".sidebar")
+        phone_page.wait_for_function(
+            "document.querySelector('.sidebar').classList.contains('open')", timeout=1500)
         sidebar.wait_for(state="visible", timeout=1500)
     except Exception:
-        pytest.fail("Sidebar should become visible after hamburger click")
+        pytest.fail("Sidebar should open after hamburger click")
+    finally:
+        # Shared session page: leave it closed for whatever test runs next.
+        _ensure_sidebar_closed(phone_page)
 
 
 def test_T02_sidebar_overlay_exists(phone_page):
@@ -148,7 +184,9 @@ def test_T02_overlay_closes_sidebar(phone_page):
     phone_page.mouse.click(350, 333)
     phone_page.wait_for_timeout(500)
     sidebar = phone_page.locator(".sidebar")
-    assert not sidebar.evaluate("el => el.classList.contains('open')"), "Sidebar should be closed"
+    is_open = sidebar.evaluate("el => el.classList.contains('open')")
+    _ensure_sidebar_closed(phone_page)
+    assert not is_open, "Sidebar should be closed"
 
 
 def test_T02_sidebar_max_width_phone(phone_page):

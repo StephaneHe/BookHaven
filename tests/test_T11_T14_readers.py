@@ -72,22 +72,41 @@ def test_T14_epub_nav_buttons_wide_on_phone(phone_page):
     assert css_has_rule, "Should have CSS rule for .epub-nav width 30% on mobile"
 
 
-def test_T14_comic_img_fits_viewport_phone(phone_page):
-    """Check CSS rule: comic img max-width: 100vw."""
-    has_rule = phone_page.evaluate("""
-        (() => {
-            for (const sheet of document.styleSheets) {
-                try {
-                    for (const rule of sheet.cssRules) {
-                        if (rule.cssRules) {
-                            for (const sub of rule.cssRules) {
-                                if (sub.cssText && sub.cssText.includes('#comic-container') && sub.cssText.includes('100vw')) return true;
-                            }
-                        }
-                    }
-                } catch(e) {}
-            }
-            return false;
-        })()
-    """)
-    assert has_rule, "Comic container should have max-width: 100vw CSS on mobile"
+def test_T14_comic_img_fits_viewport_phone(fresh_phone_page):
+    """Phone: a comic page fits the viewport width, filling the area between
+    the prev/next nav bars.
+
+    The original check looked for a `#comic-container ... 100vw` CSS rule
+    (`max-width:100vw; max-height:calc(100vh - 50px)`, fit-height). That rule
+    was deliberately replaced in 2.5.2 (d1ea649, fit-WIDTH default for
+    manhua/webtoon: `width:var(--comic-zoom); height:auto`) and refined in
+    2.5.3 (fill the area BETWEEN the nav buttons, `--comic-nav-w` 44px on
+    mobile). 2.7.14/2.7.15 only bound the column on desktop (>=769px); mobile
+    keeps the full-width layout. So assert the rendered result instead of a
+    CSS string: an oversized page image is scaled to sit inside the viewport,
+    between the nav bars, at 100% zoom. Uses an inline SVG -- no library
+    content needed.
+    """
+    page = fresh_phone_page
+    vw = page.viewport_size["width"]
+    r = page.evaluate("""() => new Promise((resolve, reject) => {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('reader-view').classList.add('active');
+        const c = document.getElementById('comic-container');
+        c.classList.remove('continuous');
+        c.style.display = '';
+        const img = document.getElementById('comic-img');
+        img.onload = () => {
+            const ir = img.getBoundingClientRect();
+            const nav = parseFloat(getComputedStyle(c).getPropertyValue('--comic-nav-w'));
+            resolve({x: ir.x, w: ir.width, h: ir.height, nav});
+        };
+        img.onerror = reject;
+        img.src = 'data:image/svg+xml,' + encodeURIComponent(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="3000"></svg>');
+    })""")
+    assert r["x"] >= 0 and r["x"] + r["w"] <= vw, f"Comic page overflows the {vw}px viewport: {r}"
+    expected = vw - 2 * r["nav"]
+    assert abs(r["w"] - expected) <= 1, \
+        f"Comic page should fill the area between nav bars ({expected}px), got {r['w']}px"
+    assert abs(r["h"] / r["w"] - 1.5) < 0.01, f"Aspect ratio not preserved: {r}"

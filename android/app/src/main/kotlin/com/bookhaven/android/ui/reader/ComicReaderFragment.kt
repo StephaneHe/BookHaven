@@ -33,7 +33,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.util.Locale
 import javax.inject.Inject
 import kotlin.math.roundToInt
 
@@ -68,9 +67,6 @@ class ComicReaderFragment : Fragment() {
     private data class Chapter(val key: String, val num: Double, val idxs: List<Int>)
 
     companion object {
-        private const val ZOOM_MIN = 40
-        private const val ZOOM_MAX = 400
-        private const val ZOOM_STEP = 15
         private const val MAX_PREFETCH = 200   // safety cap on plates warmed ahead (files only)
         private const val WEBTOON_SAMPLE = 4   // plates sampled by detectWebtoon()
 
@@ -124,7 +120,7 @@ class ComicReaderFragment : Fragment() {
                 val fresh = withContext(Dispatchers.IO) { runCatching { api.getBookDetail(bookId) }.getOrNull() }
                 detail = fresh
                 val serverVer = fresh?.contentVersion.orEmpty()
-                if (fresh != null && serverVer.isNotBlank() && serverVer != stored) {
+                if (fresh != null && ComicReaderLogic.isOfflineCopyStale(stored, serverVer)) {
                     if (confirmUpdate()) {
                         val redownloaded = withContext(Dispatchers.IO) {
                             downloadRepo.deleteDownload(bookId)
@@ -165,14 +161,15 @@ class ComicReaderFragment : Fragment() {
 
             b.comicProgressBar.max = 100
             // A plate index (paged) or "plate.fraction" (webtoon scroll position, as the web).
-            val startValue = downloadRepo.resolveProgress(bookId)?.position?.toDoubleOrNull() ?: 0.0
-            val startPage = startValue.toInt().coerceIn(0, totalPages - 1)
-            val startFrac = (startValue - startValue.toInt()).toFloat().coerceIn(0f, 0.9999f)
+            val (startPage, startFrac) =
+                ComicReaderLogic.parsePosition(downloadRepo.resolveProgress(bookId)?.position, totalPages)
 
             // Manhua / manhwa / webtoon -> ONE continuous vertical scroll, no page notion.
             // The server flag (series/category) is authoritative so such a book never
             // falls back to the paged reader; detection covers unflagged/offline books.
-            val isWebtoon = detail?.webtoon == true || withContext(Dispatchers.IO) { detectWebtoon() }
+            val isWebtoon = ComicReaderLogic.useContinuousReader(detail?.webtoon) {
+                withContext(Dispatchers.IO) { detectWebtoon() }
+            }
             if (isWebtoon) {
                 setupContinuous(startPage, startFrac)
             } else {
@@ -237,11 +234,11 @@ class ComicReaderFragment : Fragment() {
         b.rvContinuous.setItemViewCacheSize(4)   // keep a few decoded holders around
 
         // Per-book zoom (device-local UI preference, like the web's localStorage).
-        zoomPct = prefs.getInt(zoomKey(), 100).coerceIn(ZOOM_MIN, ZOOM_MAX)
+        zoomPct = ComicReaderLogic.clampZoom(prefs.getInt(zoomKey(), 100))
         b.tvZoom.text = "$zoomPct%"
 
-        b.btnZoomIn.setOnClickListener { setZoom(zoomPct + ZOOM_STEP) }
-        b.btnZoomOut.setOnClickListener { setZoom(zoomPct - ZOOM_STEP) }
+        b.btnZoomIn.setOnClickListener { setZoom(zoomPct + ComicReaderLogic.ZOOM_STEP) }
+        b.btnZoomOut.setOnClickListener { setZoom(zoomPct - ComicReaderLogic.ZOOM_STEP) }
         b.tvZoom.setOnClickListener { setZoom(100) }                 // tap label = reset (fit width)
         b.btnChapterPrev.setOnClickListener { chapterStep(-1) }
         b.btnChapterNext.setOnClickListener { chapterStep(1) }
@@ -332,10 +329,12 @@ class ComicReaderFragment : Fragment() {
 
     /** Previous/next chapter of this file, then previous/next book of the series. */
     private fun chapterStep(dir: Int) {
-        val target = chapterIdx + dir
-        if (target in chapters.indices) { renderChapter(target, null); return }
-        val sib = if (dir < 0) detail?.seriesPrev else detail?.seriesNext
-        sib?.let { openSeriesBook(it) }
+        when (val step = ComicReaderLogic.chapterStep(
+            chapterIdx, dir, chapters.size, detail?.seriesPrev, detail?.seriesNext)) {
+            is ComicReaderLogic.ChapterStep.InFile -> renderChapter(step.index, null)
+            is ComicReaderLogic.ChapterStep.Series -> openSeriesBook(step.ref)
+            ComicReaderLogic.ChapterStep.None -> Unit
+        }
     }
 
     private fun openSeriesBook(ref: SeriesRef) {
@@ -353,11 +352,9 @@ class ComicReaderFragment : Fragment() {
 
     /** Webtoon progress = exact scroll position "plate.fraction" + %, 100 only at the end. */
     private fun saveScrollProgress(globalIdx: Int, frac: Float, finished: Boolean) {
-        val v = globalIdx + frac.toDouble()
-        val pct = if (finished) 100f
-                  else (v / totalPages * 100).toFloat().coerceIn(1f, 99f).toInt().toFloat()
+        val pct = ComicReaderLogic.progressPercent(globalIdx, frac, totalPages, finished)
         b.comicProgressBar.progress = pct.toInt()
-        val location = String.format(Locale.US, "%.4f", v)
+        val location = ComicReaderLogic.formatPosition(globalIdx, frac)
         viewLifecycleOwner.lifecycleScope.launch {
             downloadRepo.saveProgress(bookId, location, pct)
         }
@@ -459,7 +456,7 @@ class ComicReaderFragment : Fragment() {
     }
 
     private fun setZoom(z: Int) {
-        zoomPct = z.coerceIn(ZOOM_MIN, ZOOM_MAX)
+        zoomPct = ComicReaderLogic.clampZoom(z)
         b.tvZoom.text = "$zoomPct%"
         prefs.edit().putInt(zoomKey(), zoomPct).apply()
         // Preserve the reading position across the re-measure.

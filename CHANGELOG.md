@@ -5,6 +5,38 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.9.1] - 2026-10-04
+
+### Added
+- **Registre des exigences utilisateur** `docs/USER_REQUIREMENTS.md` : 97 exigences
+  livrées (2026-10-04 et antérieures, retrouvées dans les CHANGELOG), chacune avec
+  le(s) test(s) automatisé(s) qui la protègent (9 comportements Android marqués
+  MANUEL : vérifiables seulement sur appareil). `tests/test_user_requirements_registry.py`
+  vérifie que chaque test cité existe.
+- **Gate de non-régression unique** `python scripts/run_regression.py` : pytest
+  (serveur, navigateur desktop + mobile, bout en bout) + tests JVM Android (JDK 17
+  détecté). Règle 3 de `CLAUDE.md` : à rejouer avant chaque livraison.
+- Nouveaux tests : `tests/test_requirements_server.py` (23) et
+  `tests/test_requirements_web_ui.py` (zoom, colonne bornée, sélecteur de chapitre,
+  préchargement, XSS, lecteur EPUB : erreur de chargement, pastille de pages, taille
+  de police, thème, séquences `\uXXXX`, position jamais vide, lien profond…).
+
+### Fixed
+- **Zoom du lecteur paginé sans effet sur desktop** (> 768 px) : le plafond de la
+  colonne de lecture (900 px, 2.7.15) bloquait aussi le zoom (2.6.0). Le plafond
+  vaut désormais 900 px × zoom (`--comic-zoom-f`) : la colonne reste bornée à 100 %,
+  le zoom agrandit à nouveau l'image.
+- **Tests fiabilisés** (la suite doit être verte pour servir de gate) : 5 tests
+  d'interface obsolètes réécrits sur le comportement actuel (bouton scan en icône,
+  nom tronqué, fiche livre en page plein écran, image paginée entre les barres) ;
+  tests d'authentification rendus indépendants de l'ordre (mode connexion requise
+  forcé) ; port de test choisi automatiquement ; **le serveur des tests d'interface
+  tourne sur une copie temporaire de la base** (il exécutait auparavant migrations,
+  purge et enrichissement sur la base réelle).
+
+### Changed
+- **`__version__` 2.9.0 → 2.9.1.**
+
 ## [2.9.0] - 2026-10-04
 
 ### Changed

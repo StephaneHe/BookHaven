@@ -17,15 +17,28 @@ def client():
         yield c
 
 
-def test_cover_requires_auth(client):
-    with patch.object(bookhaven, "TEST_MODE", False):
-        resp = client.get("/api/books/1/cover")
+@pytest.fixture()
+def login_enforced():
+    """Force login-required mode for the duration of one test.
+
+    Since 2.7.16 (passwordless entry) the default -- BOOKHAVEN_LOGIN_REQUIRED
+    unset -- makes _ensure_session_user() auto-select the default user, so a
+    session-less request is *not* rejected. The 401 contract only holds when
+    login is required and the TEST_MODE bypass is off; set both explicitly so
+    the result never depends on the environment or on test order.
+    """
+    with patch.object(bookhaven, "TEST_MODE", False), \
+         patch.object(bookhaven.config, "LOGIN_REQUIRED", True):
+        yield
+
+
+def test_cover_requires_auth(client, login_enforced):
+    resp = client.get("/api/books/1/cover")
     assert resp.status_code == 401
 
 
-def test_enrichment_status_requires_auth(client):
-    with patch.object(bookhaven, "TEST_MODE", False):
-        resp = client.get("/api/enrichment/status")
+def test_enrichment_status_requires_auth(client, login_enforced):
+    resp = client.get("/api/enrichment/status")
     assert resp.status_code == 401
 
 

@@ -1,6 +1,6 @@
 # BookHaven
 
-![version](https://img.shields.io/badge/version-2.9.0-blue)
+![version](https://img.shields.io/badge/version-2.9.1-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-lightgrey)
 ![python](https://img.shields.io/badge/python-3.12-informational)
@@ -11,7 +11,7 @@ progress sync, and **local-LLM genre classification**. Point it at a folder of
 books, scan, and read from any device on your network.
 
 **Status:** actively maintained, personal self-hosted project — server
-**v2.9.0**, Android client **v1.10.0**. The current version is shown in the web
+**v2.9.1**, Android client **v1.10.1**. The current version is shown in the web
 UI footer and returned by `GET /api/version`.
 
 > Screenshots below are generated from a demo instance seeded exclusively with
@@ -158,8 +158,13 @@ kept out of the repository by `.gitignore`.
 ```bash
 python -m pip install -r requirements-dev.txt
 python -m playwright install chromium     # for the browser UI tests
-python -m pytest
+python -m pytest                     # or the full gate, Android JVM tests included:
+python scripts/run_regression.py
 ```
+
+Every delivered user requirement is listed with the tests that protect it in
+[`docs/USER_REQUIREMENTS.md`](docs/USER_REQUIREMENTS.md); the gate must pass before
+each release.
 
 The suite includes dedicated security tests (upload validation, EPUB-resource
 isolation, PIN brute-force lockout, session-cookie hardening, SSRF guard,

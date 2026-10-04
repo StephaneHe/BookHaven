@@ -664,7 +664,9 @@ input:focus, select:focus { outline: none; border-color: #7c8cf5; }
 #comic-container { --comic-col-w: 900px; }
 @media (min-width: 769px) {
   #comic-container.continuous > #comic-scroll { max-width: var(--comic-col-w); margin-left: auto; margin-right: auto; }
-  #comic-container > #comic-img { max-width: var(--comic-col-w); }
+  /* The cap is the column at 100 % zoom; zooming in enlarges it (a fixed 900px
+     cap made the paged zoom a no-op on desktop). */
+  #comic-container > #comic-img { max-width: calc(var(--comic-col-w) * var(--comic-zoom-f, 1)); }
 }
 .next-chapter-btn {
   display: block; margin: 18px auto 40px; padding: 10px 26px;
@@ -2792,7 +2794,10 @@ function comicZoomKey(id) { return 'bookhaven.zoom.comic.' + id; }
 function comicZoomApply(z, persist) {
   comicZoomPct = Math.max(COMIC_ZOOM_MIN, Math.min(COMIC_ZOOM_MAX, Math.round(z)));
   const c = document.getElementById('comic-container');
-  if (c) c.style.setProperty('--comic-zoom', comicZoomPct + '%');
+  if (c) {
+    c.style.setProperty('--comic-zoom', comicZoomPct + '%');
+    c.style.setProperty('--comic-zoom-f', String(comicZoomPct / 100));   // unitless, for calc()
+  }
   const lbl = document.getElementById('comic-zoom-label');
   if (lbl) lbl.textContent = comicZoomPct + '%';
   if (persist && state.currentBook) {

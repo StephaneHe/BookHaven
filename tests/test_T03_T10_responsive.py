@@ -139,44 +139,33 @@ def test_T08_login_fits_phone(phone_page):
 # ── T09: Modals ──────────────────────────────────────────────
 
 
-def test_T09_modal_fullscreen_on_phone(phone_page):
-    """Phone: verify modal CSS rules exist for full-screen on mobile."""
-    has_modal_css = phone_page.evaluate("""
-        (() => {
-            for (const sheet of document.styleSheets) {
-                try {
-                    for (const rule of sheet.cssRules) {
-                        if (rule.cssRules) {
-                            for (const sub of rule.cssRules) {
-                                if (sub.cssText && sub.cssText.includes('.modal-box') && sub.cssText.includes('100vw'))
-                                    return true;
-                            }
-                        }
-                    }
-                } catch(e) {}
-            }
-            return false;
-        })()
-    """)
-    assert has_modal_css, "Modal should have width: 100vw CSS rule on mobile"
-    has_close_css = phone_page.evaluate("""
-        (() => {
-            for (const sheet of document.styleSheets) {
-                try {
-                    for (const rule of sheet.cssRules) {
-                        if (rule.cssRules) {
-                            for (const sub of rule.cssRules) {
-                                if (sub.cssText && sub.cssText.includes('.modal-close') && sub.cssText.includes('44px'))
-                                    return true;
-                            }
-                        }
-                    }
-                } catch(e) {}
-            }
-            return false;
-        })()
-    """)
-    assert has_close_css, "Modal close button should be 44px on mobile"
+def test_T09_book_detail_fullscreen_on_phone(fresh_phone_page):
+    """Phone: book details open full-screen, with a reachable Back control.
+
+    T09 originally checked the `.modal-box` / `.modal-close` mobile CSS. The
+    book-info modal was deliberately removed in bf104c8 (2026-03-31, "Replace
+    book info modal with full detail page + deep linking"): details are now the
+    `#detail-view` page. Assert the same intent on it -- full viewport width,
+    no horizontal overflow, Back button visible and touch-friendly (same
+    max(w,h) >= 40px metric as the topbar buttons in T01). Driven by forcing
+    the view open, so it doesn't depend on library content.
+    """
+    page = fresh_phone_page
+    vw = page.viewport_size["width"]
+    page.evaluate("""() => {
+        document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+        document.getElementById('detail-view').classList.add('active');
+    }""")
+    box = page.locator("#detail-view").bounding_box()
+    assert box is not None, "Detail view should be displayed"
+    assert box["x"] == 0 and abs(box["width"] - vw) <= 1, \
+        f"Detail view should span the full phone width, got {box}"
+    scroll_w = page.evaluate("document.documentElement.scrollWidth")
+    assert scroll_w <= vw, f"Detail view overflows horizontally: {scroll_w}px > {vw}px"
+    back = page.locator("#detail-view .detail-topbar .back-btn")
+    assert back.is_visible(), "Detail view needs a visible Back button"
+    b = back.bounding_box()
+    assert max(b["width"], b["height"]) >= 40, f"Back touch target too small: {b}"
 
 
 # ── T10: Enrichment Bar ─────────────────────────────────────

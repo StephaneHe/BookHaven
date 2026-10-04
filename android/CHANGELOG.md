@@ -1,5 +1,18 @@
 # Changelog — BookHaven Android
 
+## [1.10.1] - 2026-10-04
+
+### Changed
+- Logique pure du lecteur webtoon extraite dans `ui/reader/ComicReaderLogic.kt`
+  (zoom borné, choix du mode continu, position « planche.fraction », pourcentage,
+  navigation chapitre/série, copie hors ligne périmée), **comportement inchangé**,
+  pour la tester en JVM.
+- 40 nouveaux tests JVM (44 au total) : tri naturel hors ligne, cache des pages par
+  `content_version`, résolution/synchronisation de la progression, manifeste
+  (`allowBackup=false`, config réseau), connexion sans PIN, logique webtoon.
+  Rejoués par `python scripts/run_regression.py`.
+- versionCode 69, versionName 1.10.1. APK buildé.
+
 ## [1.10.0] - 2026-10-04
 
 ### Changed

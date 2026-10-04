@@ -12,12 +12,55 @@ from urllib.error import URLError
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # Interpreter: BOOKHAVEN_PYTHON overrides, else reuse the one running pytest.
 PYTHON = os.environ.get("BOOKHAVEN_PYTHON", sys.executable)
-SERVER_SCRIPT = os.path.join(_REPO_ROOT, "bookhaven.py")
-# Test port: override with BOOKHAVEN_TEST_PORT if 8098 is taken by another
-# local service. Use 127.0.0.1 (not "localhost", which some browsers resolve
-# to IPv6 ::1 while waitress binds IPv4).
-TEST_PORT = int(os.environ.get("BOOKHAVEN_TEST_PORT", "8098"))
+REAL_DB_PATH = os.path.join(_REPO_ROOT, "data", "bookhaven.db")
+
+
+def _free_local_port():
+    """Ask the OS for a currently free TCP port on 127.0.0.1."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+# Test port: BOOKHAVEN_TEST_PORT pins it; otherwise the OS picks a free one, so
+# a foreign service on a fixed port (8098 is taken on the dev machine) can't
+# break the UI suite. Use 127.0.0.1 (not "localhost", which some browsers
+# resolve to IPv6 ::1 while waitress binds IPv4).
+TEST_PORT = int(os.environ.get("BOOKHAVEN_TEST_PORT") or _free_local_port())
 BASE_URL = f"http://127.0.0.1:{TEST_PORT}"
+
+# The UI test server runs bookhaven's app against a *snapshot* of the library
+# database, never the live data/bookhaven.db: running `bookhaven.py` directly
+# would init/migrate the real DB and start the media-enrichment worker, which
+# writes metadata into it (and races the production server on port 8097).
+# Mirrors bookhaven.py's __main__ block minus the side effects on shared state
+# (legacy-path migration, orphan-upload purge, media worker).
+_SERVER_BOOTSTRAP = r"""
+import sys
+sys.path.insert(0, sys.argv[1])
+import config
+config.DB_PATH = sys.argv[2]
+import bookhaven
+bookhaven.database.init_db()
+bookhaven._run_server(None)
+"""
+
+
+def _snapshot_db(dest):
+    """Copy the real DB to `dest` through SQLite's backup API (read-only on the
+    source, WAL-consistent). An empty DB is used if there is no library."""
+    import sqlite3
+    dst = sqlite3.connect(dest)
+    try:
+        if os.path.exists(REAL_DB_PATH):
+            src = sqlite3.connect(f"file:{REAL_DB_PATH}?mode=ro", uri=True)
+            try:
+                src.backup(dst)
+            finally:
+                src.close()
+    finally:
+        dst.close()
 
 @pytest.fixture(autouse=True)
 def _config_module_identity():
@@ -66,29 +109,42 @@ def _wait_for_server(url, timeout=15):
 
 
 @pytest.fixture(scope="session")
-def server():
-    # Kill any lingering python processes on test port
+def server(tmp_path_factory):
+    work = tmp_path_factory.mktemp("bookhaven_ui_server")
+    db_copy = str(work / "bookhaven.db")
+    _snapshot_db(db_copy)
+    log_path = work / "server.log"
     env = os.environ.copy()
     env["BOOKHAVEN_TEST_MODE"] = "1"
     env["BOOKHAVEN_ENV"] = "development"
     env["BOOKHAVEN_PORT"] = str(TEST_PORT)
+    # Output goes to a file, not a PIPE nobody drains: a full pipe buffer
+    # would eventually block the server mid-suite.
+    log = open(log_path, "wb")
     proc = subprocess.Popen(
-        [PYTHON, SERVER_SCRIPT],
+        [PYTHON, "-c", _SERVER_BOOTSTRAP, _REPO_ROOT, db_copy],
         cwd=_REPO_ROOT,
         env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
+        stdout=log,
+        stderr=subprocess.STDOUT,
     )
-    if not _wait_for_server(BASE_URL):
-        proc.kill()
-        out, err = proc.communicate(timeout=5)
-        raise RuntimeError(
-            f"BookHaven did not answer on {BASE_URL} (port {TEST_PORT} may be "
-            f"in use by another service — set BOOKHAVEN_TEST_PORT to a free "
-            f"port).\n{err.decode(errors='replace')[-500:]}")
-    yield BASE_URL
-    proc.kill()
-    proc.wait(timeout=5)
+    try:
+        if not _wait_for_server(BASE_URL):
+            proc.kill()
+            proc.wait(timeout=5)
+            log.close()
+            tail = log_path.read_bytes().decode(errors="replace")[-800:]
+            raise RuntimeError(
+                f"BookHaven did not answer on {BASE_URL} (port {TEST_PORT} may "
+                f"be in use by another service — unset BOOKHAVEN_TEST_PORT to "
+                f"pick a free port automatically).\n{tail}")
+        yield BASE_URL
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait(timeout=5)
+        if not log.closed:
+            log.close()
 
 
 @pytest.fixture(scope="session")
@@ -127,6 +183,16 @@ def phone_page(pw_browser, server):
     page, ctx = _make_logged_in_page(pw_browser, server, PHONE)
     yield page
     ctx.close()
+
+@pytest.fixture()
+def fresh_phone_page(pw_browser, server):
+    """Throwaway phone page for tests that mutate the DOM (forcing a view
+    open, injecting an image) so the shared session `phone_page` stays clean
+    and test order doesn't matter."""
+    page, ctx = _make_logged_in_page(pw_browser, server, PHONE)
+    yield page
+    ctx.close()
+
 
 @pytest.fixture(scope="session")
 def tablet_page(pw_browser, server):
