@@ -1,6 +1,6 @@
 # BookHaven
 
-![version](https://img.shields.io/badge/version-2.7.16-blue)
+![version](https://img.shields.io/badge/version-2.8.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-lightgrey)
 ![python](https://img.shields.io/badge/python-3.12-informational)
@@ -11,7 +11,7 @@ progress sync, and **local-LLM genre classification**. Point it at a folder of
 books, scan, and read from any device on your network.
 
 **Status:** actively maintained, personal self-hosted project — server
-**v2.7.16**, Android client **v1.9.4**. The current version is shown in the web
+**v2.8.0**, Android client **v1.9.4**. The current version is shown in the web
 UI footer and returned by `GET /api/version`.
 
 > Screenshots below are generated from a demo instance seeded exclusively with
@@ -117,6 +117,11 @@ All configuration is via environment variables (see `.env.example`):
 | `BOOKHAVEN_MAX_UPLOAD_MB` | no | Upload size cap (default `512`). |
 | `UNRAR_TOOL` | no | Path to `UnRAR.exe` for CBR extraction. |
 | `CALIBRE_CONVERT` | no | Path to `ebook-convert` for PDF→EPUB. |
+
+To keep specific files out of the library, list glob patterns relative to
+`BOOKS_ROOT` (one per line, `#` for comments) in `data/scan_exclude.txt`.
+Excluded files are skipped by the scanner, and any existing entry for them is
+dropped on the next scan.
 
 ## Security model
 

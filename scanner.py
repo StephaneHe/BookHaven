@@ -1,6 +1,7 @@
 """BookHaven library scanner - extracts metadata and covers from book files."""
 import os
 import re
+import fnmatch
 import zipfile
 import hashlib
 import xml.etree.ElementTree as ET
@@ -56,6 +57,7 @@ def scan_library(progress_callback=None):
     
     # Collect all files first
     all_files = []
+    excludes = load_scan_excludes()
     for lib_path in config.LIBRARY_PATHS:
         if not os.path.isdir(lib_path):
             logger.warning(f"Library path not found: {lib_path}")
@@ -66,6 +68,8 @@ def scan_library(progress_callback=None):
                 ext = os.path.splitext(fname)[1].lower()
                 if ext in config.SUPPORTED_FORMATS:
                     full_path = os.path.join(root, fname)
+                    if is_excluded(full_path, excludes):
+                        continue
                     all_files.append((full_path, fname, ext, category, root))
     
     total = len(all_files)
@@ -208,6 +212,38 @@ def scan_library(progress_callback=None):
         logger.error(f"Collection assignment error: {e}")
     
     return {"new": new_count, "updated": updated_count, "removed": deleted_count, "moved": moved_count, "total": total}
+
+
+def load_scan_excludes(path=None):
+    """Read glob patterns (relative to BOOKS_ROOT) from config.SCAN_EXCLUDE_FILE.
+
+    Missing file = no exclusions. Patterns are normcase'd so matching is
+    case-insensitive on Windows, and "/" or "\\" separators both work.
+    """
+    path = path or config.SCAN_EXCLUDE_FILE
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            lines = f.read().splitlines()
+    except FileNotFoundError:
+        return []
+    return [os.path.normcase(os.path.normpath(l.strip()))
+            for l in lines if l.strip() and not l.strip().startswith("#")]
+
+
+def is_excluded(full_path, patterns):
+    """True if full_path, relative to BOOKS_ROOT, matches an exclusion pattern.
+
+    Excluded files are treated as absent: never imported, and an existing row
+    for one is removed by the scan's deleted-file pass.
+    """
+    if not patterns:
+        return False
+    try:
+        rel = os.path.relpath(full_path, config.BOOKS_ROOT)
+    except ValueError:  # different drive
+        return False
+    rel = os.path.normcase(os.path.normpath(rel))
+    return any(fnmatch.fnmatchcase(rel, p) for p in patterns)
 
 
 def _get_category(lib_path):

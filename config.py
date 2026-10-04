@@ -29,6 +29,11 @@ CATEGORY_MAP = {
 # Supported file extensions
 SUPPORTED_FORMATS = {".epub", ".pdf", ".cbr", ".cbz", ".mobi"}
 
+# Scan exclusions: one glob pattern per line, relative to BOOKS_ROOT
+# (e.g. "Comics/Some Series/*.epub"); blank lines and "#" comments ignored.
+# Lives under data/ (not versioned) because it names files of the local library.
+SCAN_EXCLUDE_FILE = os.path.join(BASE_DIR, "data", "scan_exclude.txt")
+
 # Database
 DB_PATH = os.path.join(BASE_DIR, "data", "bookhaven.db")
 

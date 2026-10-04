@@ -5,6 +5,26 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.0] - 2026-10-04
+
+### Added
+- **Exclusions de scan** : `data/scan_exclude.txt` (non versionné), un motif glob
+  par ligne relatif à `BOOKS_ROOT` (`#` = commentaire, insensible à la casse sous
+  Windows). Les fichiers exclus sont ignorés par `scan_library` (jamais importés ;
+  une entrée existante est retirée par la passe « fichiers disparus »). Fonctions
+  `scanner.load_scan_excludes()` / `scanner.is_excluded()`, tests
+  `tests/test_scan_exclude.py`.
+
+### Removed
+- **« Solo Leveling: Ragnarok » (roman web texte)** retiré de la bibliothèque :
+  3 entrées (ajoutées le jour même, ids 39578–39580), leur progression de lecture,
+  couvertures en cache et caches `epub_locations`. Ce n'était pas le manhwa voulu.
+  Les 3 EPUB sont exclus nommément dans `data/scan_exclude.txt` (pas le dossier,
+  qui doit recevoir les comics). Sauvegarde préalable de la base dans `backup/`.
+
+### Changed
+- **`__version__` 2.7.16 → 2.8.0.** ⚠️ **Redémarrage Flask requis** (exclusions).
+
 ## [2.7.16] - 2026-09-22
 
 ### Changed
