@@ -19,8 +19,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **« Solo Leveling: Ragnarok » (roman web texte)** retiré de la bibliothèque :
   3 entrées (ajoutées le jour même, ids 39578–39580), leur progression de lecture,
   couvertures en cache et caches `epub_locations`. Ce n'était pas le manhwa voulu.
-  Les 3 EPUB sont exclus nommément dans `data/scan_exclude.txt` (pas le dossier,
-  qui doit recevoir les comics). Sauvegarde préalable de la base dans `backup/`.
+  Les fichiers ont été retirés du disque par l'utilisateur : **aucune règle
+  d'exclusion** n'est posée. Sauvegarde préalable de la base dans `backup/`.
 
 ### Changed
 - **`__version__` 2.7.16 → 2.8.0.** ⚠️ **Redémarrage Flask requis** (exclusions).
