@@ -45,7 +45,7 @@ import database
 import scanner
 import media_worker
 
-__version__ = "2.8.0"
+__version__ = "2.8.1"
 
 # Configure unrar tool for CBR support
 if HAS_RARFILE:
@@ -1678,7 +1678,7 @@ def _mobi_page_count(path):
 
 
 def _list_comic_pages(path, fmt):
-    """List image files in a comic archive, sorted."""
+    """List image files in a comic archive, in natural order (p_2 before p_10)."""
     try:
         archive = _open_comic_archive(path, fmt)
         if not archive:
@@ -1690,7 +1690,7 @@ def _list_comic_pages(path, fmt):
                 if os.path.splitext(n)[1].lower() in IMAGE_EXTS
                 and not n.startswith("__MACOSX")
                 and "/." not in n
-            ])
+            ], key=scanner.natural_key)
             return pages
     except Exception:
         return []

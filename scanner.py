@@ -214,6 +214,15 @@ def scan_library(progress_callback=None):
     return {"new": new_count, "updated": updated_count, "removed": deleted_count, "moved": moved_count, "total": total}
 
 
+def natural_key(name):
+    """Sort key ordering embedded numbers numerically ("p_2" before "p_10").
+
+    re.split with a capture group always yields str, int, str, ... at fixed
+    positions, so two keys never compare str against int.
+    """
+    return [int(t) if t.isdigit() else t.lower() for t in re.split(r"(\d+)", name)]
+
+
 def load_scan_excludes(path=None):
     """Read glob patterns (relative to BOOKS_ROOT) from config.SCAN_EXCLUDE_FILE.
 
@@ -470,7 +479,7 @@ def _parse_comic(full_path, fname, ext, meta, root):
                     if os.path.splitext(n)[1].lower() in IMAGE_EXTS
                     and not n.startswith("__MACOSX")
                     and "/." not in n
-                ])
+                ], key=natural_key)
                 if images:
                     meta["page_count"] = len(images)
                     meta["_cover_data"] = zf.read(images[0])
@@ -483,7 +492,7 @@ def _parse_comic(full_path, fname, ext, meta, root):
                     n for n in zf.namelist()
                     if os.path.splitext(n)[1].lower() in IMAGE_EXTS
                     and not n.startswith("__MACOSX") and "/." not in n
-                ])
+                ], key=natural_key)
                 if images:
                     meta["page_count"] = len(images)
                     meta["_cover_data"] = zf.read(images[0])
@@ -497,7 +506,7 @@ def _parse_comic(full_path, fname, ext, meta, root):
                         n for n in rf.namelist()
                         if os.path.splitext(n)[1].lower() in IMAGE_EXTS
                         and not n.startswith("__MACOSX") and "/." not in n
-                    ])
+                    ], key=natural_key)
                     if images:
                         meta["page_count"] = len(images)
                         meta["_cover_data"] = rf.read(images[0])

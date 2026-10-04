@@ -10,6 +10,31 @@ import java.io.File
 import java.util.zip.ZipFile
 
 /**
+ * Natural page order ("p_2" before "p_10"), same as the server's
+ * scanner.natural_key: digit runs compare numerically, the rest case-insensitively.
+ * Offline order must match the server's or saved page numbers point elsewhere.
+ */
+internal object NaturalOrder : Comparator<String> {
+    private val TOKEN = Regex("\\d+|\\D+")
+
+    override fun compare(a: String, b: String): Int {
+        val ta = TOKEN.findAll(a).map { it.value }.toList()
+        val tb = TOKEN.findAll(b).map { it.value }.toList()
+        for (i in 0 until minOf(ta.size, tb.size)) {
+            val x = ta[i]; val y = tb[i]
+            val c = if (x[0].isDigit() && y[0].isDigit()) {
+                val nx = x.trimStart('0'); val ny = y.trimStart('0')
+                if (nx.length != ny.length) nx.length - ny.length else nx.compareTo(ny)
+            } else {
+                x.lowercase().compareTo(y.lowercase())
+            }
+            if (c != 0) return c
+        }
+        return ta.size - tb.size
+    }
+}
+
+/**
  * Serves comic pages ONE AT A TIME as cached Files — never the whole archive in
  * RAM (that was the OOM crash). Online: GET /api/books/<id>/comic-page/<n>.
  * Offline: read a single entry from the local CBZ with ZipFile (random access via
@@ -57,7 +82,7 @@ class ComicPageSource(
                 ZipFile(localCbz).use { z ->
                     z.entries().asSequence()
                         .filter { !it.isDirectory && it.name.substringAfterLast('.', "").lowercase() in imageExts }
-                        .map { it.name }.sorted().toList()
+                        .map { it.name }.sortedWith(NaturalOrder).toList()
                 }
             }
             else -> api.getComicPages(bookId).pages

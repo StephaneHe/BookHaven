@@ -5,6 +5,28 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.1] - 2026-10-04
+
+### Fixed
+- **Ordre des pages des comics : tri naturel** (`chap_2` avant `chap_10`, `p_2`
+  avant `p_10`) au lieu du tri alphabétique. Les archives aux numéros non
+  complétés par des zéros s'affichaient dans le désordre (ex. tomes « Solo
+  Leveling » : `chap_10_p_0` lu avant `chap_2`). `scanner.natural_key()` utilisé
+  par `_list_comic_pages` (lecteur web + API `comic-pages` de l'app) et par
+  l'extraction de couverture du scanner. Mesure d'impact sur la base : **59 comics
+  existants** (4 ZIP + 55 RAR) changent d'ordre, **aucun n'a de progression
+  enregistrée**, et les échantillons vérifiés étaient tous mal ordonnés avant
+  (`(10)` avant `(2)`, `-100` avant `-2`). Les noms complétés par des zéros gardent
+  le même ordre. Tests `tests/test_natural_page_order.py`.
+
+### Added
+- **Séries « Solo Leveling » (16 tomes, 0 à 15) et « Solo Leveling: Ragnarok »
+  (47 chapitres, saison 1)** importées dans Comics par import ciblé (sans scan
+  complet), auteurs vérifiés, description en français reliant les deux séries.
+
+### Changed
+- **`__version__` 2.8.0 → 2.8.1.** ⚠️ **Redémarrage Flask requis** (tri des pages).
+
 ## [2.8.0] - 2026-10-04
 
 ### Added

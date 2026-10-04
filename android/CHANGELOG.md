@@ -1,5 +1,17 @@
 # Changelog — BookHaven Android
 
+## [1.9.5] - 2026-10-04
+
+### Fixed
+- **Ordre des pages hors ligne : tri naturel** (`NaturalOrder` dans
+  `ComicPageSource`), identique au serveur 2.8.1. Un CBZ téléchargé était trié
+  alphabétiquement (`chap_10` avant `chap_2`), alors que le serveur trie
+  maintenant naturellement : sans ce correctif, l'ordre et les numéros de page
+  hors ligne différeraient de ceux du web.
+
+### Changed
+- versionCode 66, versionName 1.9.5. APK debug buildé.
+
 ## [1.9.4] - 2026-09-22
 
 ### Changed
