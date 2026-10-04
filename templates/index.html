@@ -2790,6 +2790,13 @@ function showComicPage() {
   const total = state.comicPages.length;
   const img = document.getElementById('comic-img');
   img.src = `/api/books/${bookId}/comic-page/${page}`;
+  // Every page change (buttons, side zones, arrow keys, swipe, page jump) lands
+  // here: the new page starts at its TOP-left. Tall pages used to keep the
+  // previous page's scroll offset, so "next" from the bottom opened the next
+  // page at its bottom.
+  const container = document.getElementById('comic-container');
+  container.scrollTop = 0;
+  container.scrollLeft = 0;
   const inp = document.getElementById('comic-page-input');
   inp.value = page + 1;                 // keep the editable field in sync with the shown page
   inp.max = total;
@@ -2820,14 +2827,31 @@ function comicJumpToInput() {
 // Tall-plate content reads as one vertical scroll per chapter, with chapter
 // navigation and NO page-flip. Chapters are derived from the plate filenames
 // (5-digit prefix / 10 = chapter number, e.g. 01725_003.jpg -> chapter 172.5).
+// Detection samples the first plates instead of plate 0 alone: scanlated webtoon
+// chapters often open with a landscape credits page, and webtoon volumes with a
+// portrait cover, which made them open in the paged reader.
+const COMIC_WEBTOON_SAMPLE = 4;
+
+// dims: [{w, h}] (null = failed load). Landscape plates (credits, double spreads)
+// are ignored; webtoon when a strict majority of the remaining plates are tall
+// strips (h/w > 2). Same rule as the Android app (ComicReaderFragment.isWebtoon).
+function comicIsWebtoonDims(dims) {
+  const portrait = dims.filter(d => d && d.w > 0 && d.h >= d.w);
+  if (!portrait.length) return false;
+  const tall = portrait.filter(d => d.h / d.w > 2).length;
+  return tall * 2 > portrait.length;
+}
+
 function comicDetectWebtoon(bookId) {
-  return new Promise(resolve => {
-    if (!state.comicPages || !state.comicPages.length) return resolve(false);
+  const n = Math.min(COMIC_WEBTOON_SAMPLE, (state.comicPages || []).length);
+  if (!n) return Promise.resolve(false);
+  const probe = i => new Promise(resolve => {
     const img = new Image();
-    img.onload = () => resolve(img.naturalWidth > 0 && img.naturalHeight / img.naturalWidth > 2);
-    img.onerror = () => resolve(false);
-    img.src = `/api/books/${bookId}/comic-page/0`;
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+    img.onerror = () => resolve(null);
+    img.src = `/api/books/${bookId}/comic-page/${i}`;
   });
+  return Promise.all(Array.from({ length: n }, (_, i) => probe(i))).then(comicIsWebtoonDims);
 }
 
 function comicBuildChapters(pages) {

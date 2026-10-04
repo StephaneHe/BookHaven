@@ -1,5 +1,19 @@
 # Changelog — BookHaven Android
 
+## [1.9.6] - 2026-10-04
+
+### Fixed
+- **Lecteur paginé : une page revient toujours à son cadrage par défaut** (page
+  entière, haut compris). ViewPager2 garde les pages voisines en vie avec leur
+  zoom/position ; revenir sur une page pouvait la rouvrir zoomée en bas.
+  `resetScaleAndCenter()` sur la page sélectionnée.
+
+### Changed
+- **Détection webtoon** alignée sur le web 2.8.2 (`ComicReaderFragment.isWebtoon`) :
+  4 premières planches, planches paysage ignorées, majorité stricte de bandes
+  hautes (h/l > 2) → lecteur vertical continu.
+- versionCode 67, versionName 1.9.6. APK debug buildé.
+
 ## [1.9.5] - 2026-10-04
 
 ### Fixed

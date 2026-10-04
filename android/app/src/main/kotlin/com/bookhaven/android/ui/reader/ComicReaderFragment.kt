@@ -64,6 +64,19 @@ class ComicReaderFragment : Fragment() {
         private const val ZOOM_MAX = 400
         private const val ZOOM_STEP = 15
         private const val MAX_PREFETCH = 200   // safety cap on plates warmed ahead (files only)
+        private const val WEBTOON_SAMPLE = 4   // plates sampled by detectWebtoon()
+
+        /**
+         * dims: (width, height) of the first plates, null = unreadable. Landscape
+         * plates (credits, double spreads) are ignored; webtoon when a strict
+         * majority of the remaining plates are tall strips (h/w > 2).
+         */
+        internal fun isWebtoon(dims: List<Pair<Int, Int>?>): Boolean {
+            val portrait = dims.filterNotNull().filter { (w, h) -> w > 0 && h >= w }
+            if (portrait.isEmpty()) return false
+            val tall = portrait.count { (w, h) -> h.toFloat() / w > 2f }
+            return tall * 2 > portrait.size
+        }
 
         fun newInstance(bookId: Int, serverUrl: String, localPath: String?) =
             ComicReaderFragment().apply {
@@ -155,12 +168,18 @@ class ComicReaderFragment : Fragment() {
         }
     }
 
-    // ── Webtoon detection: first plate ratio h/w > 2 (same rule as the web) ──────
+    // ── Webtoon detection: same rule as the web (comicIsWebtoonDims) ─────────────
+    // Samples the first plates, not plate 0 alone: scanlated webtoon chapters open
+    // with a landscape credits page, webtoon volumes with a portrait cover.
     private suspend fun detectWebtoon(): Boolean {
-        val f = source.pageFile(0) ?: return false
-        val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(f.absolutePath, o)
-        return o.outWidth > 0 && o.outHeight.toFloat() / o.outWidth > 2f
+        val dims = (0 until minOf(WEBTOON_SAMPLE, totalPages)).map { i ->
+            source.pageFile(i)?.let { f ->
+                val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(f.absolutePath, o)
+                o.outWidth to o.outHeight
+            }
+        }
+        return isWebtoon(dims)
     }
 
     // ── Paged mode (normal comics) ──────────────────────────────────────────────
@@ -173,6 +192,12 @@ class ComicReaderFragment : Fragment() {
         if (startPage in 1 until totalPages) b.viewPager.setCurrentItem(startPage, false)
         b.viewPager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
             override fun onPageSelected(position: Int) {
+                // A page kept alive by ViewPager2 keeps its zoom/pan: coming back to it
+                // could land mid-page or at its bottom. Always show it from its default
+                // fit (whole page, top included), like the web reader.
+                ((b.viewPager.getChildAt(0) as? RecyclerView)
+                    ?.findViewHolderForAdapterPosition(position) as? ComicPageAdapter.VH)
+                    ?.ssiv?.resetScaleAndCenter()
                 val pct = (position + 1).toFloat() / totalPages * 100f
                 b.tvPageNum.text = "${position + 1} / $totalPages"
                 b.comicProgressBar.progress = pct.toInt()

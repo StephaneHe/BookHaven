@@ -5,6 +5,32 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.8.2] - 2026-10-04
+
+### Fixed
+- **Lecteur comics paginé : la page suivante s'ouvrait en BAS.** Après avoir
+  défilé jusqu'au bas d'une page haute, « page suivante » gardait le décalage de
+  défilement et affichait le bas de la nouvelle page. `showComicPage()` (passage
+  obligé de tous les changements de page : boutons ‹ ›, zones latérales, flèches
+  clavier, swipe, saisie du numéro de page) remet désormais le défilement **en
+  haut à gauche**. **Page précédente : en haut aussi**, convention des lecteurs
+  paginés (Mihon/Tachiyomi, Kindle) : une page s'ouvre toujours par son début,
+  comportement prévisible quel que soit le sens. Les longues bandes, où revenir au
+  bas aurait un sens, passent maintenant en défilement continu (ci-dessous).
+  PDF (défilement continu de toutes les pages) et EPUB (pagination epub.js, sans
+  défilement vertical) ne sont pas concernés.
+
+### Changed
+- **Détection webtoon plus robuste** (`comicIsWebtoonDims`) : au lieu de la seule
+  1re planche, échantillonne les **4 premières**, **ignore les planches paysage**
+  (crédits de scantrad, doubles pages) et passe en défilement vertical continu si
+  une **majorité stricte** des planches restantes sont de longues bandes (h/l > 2).
+  « Solo Leveling: Ragnarok » (crédit paysage en page 1) et les tomes « Solo
+  Leveling » (couverture portrait puis bandes) s'ouvrent désormais en continu ; les
+  comics classiques restent paginés. Même règle dans l'app Android (1.9.6).
+- **`__version__` 2.8.1 → 2.8.2.** Tests : `tests/test_comic_reader_scroll.py`
+  (Playwright desktop + mobile, livres simulés).
+
 ## [2.8.1] - 2026-10-04
 
 ### Fixed
