@@ -5,6 +5,24 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.1] - 2026-10-05
+
+### Added
+- **Verrou de catégorie par livre** (`books.category_locked`, R104). Le scanner
+  déduit la catégorie du dossier de la bibliothèque (`H:\Books\Comics\…` → Comics)
+  et la réécrivait à chaque mise à jour d'un livre (fichier remplacé, genre vide) ;
+  un livre verrouillé garde désormais la catégorie choisie à la main. Sans verrou,
+  comportement inchangé.
+
+### Changed
+- **Tous les « Solo Leveling » en Webcomics** : les 16 tomes de « Solo Leveling » et
+  les 48 livres de « Solo Leveling: Ragnarok » (47 chapitres + saison 2), avec le
+  verrou de catégorie ; fichiers non déplacés. Seules la catégorie et le verrou
+  changent (identifiants, progressions, Continue Reading, couvertures, marquage
+  webtoon, genres verrouillés identiques ; base sauvegardée avant). Webcomics : 66
+  livres ; plus aucun Solo Leveling dans Comics.
+- **`__version__` 2.12.0 → 2.12.1.** Tag de retour : `pre-webcomics-category-2.12.0`.
+
 ## [2.12.0] - 2026-10-05
 
 ### Added

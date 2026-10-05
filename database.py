@@ -102,6 +102,15 @@ def init_db():
     # every series page failed with "no such column: sub_series".
     # reading_mode: '' = automatic (detection), 'webtoon' = always the continuous
     # vertical reader (manhua / manhwa / webtoon), never paged. See _is_webtoon().
+    # category_locked = 1: the category was chosen by hand (e.g. Solo Leveling ->
+    # Webcomics while the files stay under Comics\); a scan must keep it instead
+    # of re-deriving it from the library folder.
+    try:
+        conn.execute("ALTER TABLE books ADD COLUMN category_locked INTEGER DEFAULT 0")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+
     for col in ("sub_series", "sub_series_2", "reading_mode"):
         try:
             conn.execute(f"ALTER TABLE books ADD COLUMN {col} TEXT DEFAULT ''")

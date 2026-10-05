@@ -115,7 +115,9 @@ def scan_library(progress_callback=None):
                 # Update existing
                 conn.execute("""
                     UPDATE books SET title=?, author=?, genre=?, series=?,
-                    series_index=?, category=?, format=?, file_size=?,
+                    series_index=?,
+                    category=CASE WHEN COALESCE(category_locked, 0) = 1 THEN category ELSE ? END,
+                    format=?, file_size=?,
                     has_cover=?, page_count=?, description=?,
                     collection_path=CASE WHEN (collection_path IS NULL OR collection_path='') THEN ? ELSE collection_path END,
                     modified_at=CURRENT_TIMESTAMP
