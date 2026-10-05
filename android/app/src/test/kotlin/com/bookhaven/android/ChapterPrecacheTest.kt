@@ -43,6 +43,23 @@ class ChapterPrecacheTest {
         assertEquals(listOf(1 to 0, 1 to 1, 2 to 0, 2 to 1, 3 to 0, 3 to 1, 1 to 2, 1 to 3, 3 to 2), q)
     }
 
+    @Test fun R103_folderPerChapterSeasonFile() {
+        assertEquals("Chapter 48.00 Season 2 Start" to 48.0,
+            ComicReaderLogic.chapterKey("Chapter 48.00 Season 2 Start/01.jpg"))
+        assertEquals("01725" to 172.5, ComicReaderLogic.chapterKey("01725_003.jpg"))      // manhua plates
+        assertEquals("__" to null, ComicReaderLogic.chapterKey("p_0.png"))                 // one-chapter file
+        val names = listOf("Chapter 48.00 Season 2 Start/01.jpg", "Chapter 48.00 Season 2 Start/02.jpg",
+                           "Chapter 49.00/01.jpg", "Chapter 49.00/02.jpg", "Chapter 49.00/03.jpg")
+        assertEquals(2, ComicReaderLogic.firstChapterLength(names))
+        assertEquals(3, ComicReaderLogic.firstChapterLength(listOf("p_0.png", "p_1.png", "p_2.png")))
+    }
+
+    @Test fun R103_oversizedNextFileIsNotTakenWhole() {
+        val mb = 1024L * 1024
+        // next = a 500 MB file (more than the 400 MB budget): first strips only
+        assertEquals(listOf(false, true), ComicReaderLogic.wholeChapters(listOf(500 * mb, 50 * mb)))
+    }
+
     @Test fun R98_neverBeyondKAndKClamped() {
         assertEquals(3, ComicReaderLogic.PRECACHE_DEFAULT)
         assertEquals(0, ComicReaderLogic.precacheCount(-2))       // off

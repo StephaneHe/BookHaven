@@ -5,6 +5,31 @@ All notable changes to BookHaven will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.12.0] - 2026-10-05
+
+### Added
+- **Fichiers « saison complète » lus chapitre par chapitre** (R103). Un CBZ dont les
+  images sont rangées dans un dossier par chapitre (`Chapter 48.00 Season 2
+  Start/01.jpg` … `Chapter 68.00 Season 2 END/15.jpg`) est découpé en chapitres :
+  sélecteur « Ch. 48 … Ch. 68 », **un seul chapitre rendu à la fois** (~14 bandes,
+  ~25 Mo, au lieu des 273 bandes / 496 Mo d'un coup), ‹ › et bouton de fin passent
+  au chapitre suivant du fichier puis au livre voisin de la série. Les manhua à
+  planches `NNNNN_NNN` gardent leur découpage ; un fichier sans dossiers reste un
+  seul chapitre.
+- Importé : **« Saison 2 — ch. 48 à 68 »** (`Solo Leveling Ragnarok S2 Complete.cbz`,
+  273 images, 21 chapitres) dans la série « Solo Leveling: Ragnarok », placé après le
+  chapitre 47 (« fin de saison »), marquage webtoon, couverture = 1re page.
+
+### Changed
+- **Pré-cache** : d'un fichier multi-chapitres, seul le **premier chapitre** est
+  préchargé (ex. depuis le ch. 47 : 14 bandes de la saison 2 sur 273) ; le « chapitre
+  suivant toujours entier » est désormais soumis au budget de 400 Mo.
+- **Bandes réessayées sans limite tant qu'elles sont affichées** (délai plafonné à
+  10 s) : la limite de 4 essais de la 2.10.2 laissait des bandes manquantes pour de
+  bon après une surcharge prolongée (> ~20 s). Trouvé par le test de charge R100,
+  instable dans la suite complète (machine chargée) : c'était ce défaut réel.
+- **`__version__` 2.11.0 → 2.12.0.** Tag de retour : `pre-s2-import-2.11.0`.
+
 ## [2.11.0] - 2026-10-04
 
 ### Added

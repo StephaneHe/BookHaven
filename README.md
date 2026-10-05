@@ -1,6 +1,6 @@
 # BookHaven
 
-![version](https://img.shields.io/badge/version-2.11.0-blue)
+![version](https://img.shields.io/badge/version-2.12.0-blue)
 ![license](https://img.shields.io/badge/license-MIT-green)
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Android-lightgrey)
 ![python](https://img.shields.io/badge/python-3.12-informational)
@@ -11,7 +11,7 @@ progress sync, and **local-LLM genre classification**. Point it at a folder of
 books, scan, and read from any device on your network.
 
 **Status:** actively maintained, personal self-hosted project — server
-**v2.11.0**, Android client **v1.11.0**. The current version is shown in the web
+**v2.12.0**, Android client **v1.12.0**. The current version is shown in the web
 UI footer and returned by `GET /api/version`.
 
 > Screenshots below are generated from a demo instance seeded exclusively with

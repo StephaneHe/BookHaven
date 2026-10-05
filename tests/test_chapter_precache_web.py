@@ -19,6 +19,7 @@ PLATES[920003] = 30            # long chapters so a cancellation lands mid-way
 PLATES[920004] = 30
 SIZES = {}                     # bid -> file_size served in series_following (budget test)
 BUSY = {}                      # (bid, plate) -> number of 503 answers still to give
+NAMES = {}                     # bid -> archive page names (folder-per-chapter season files)
 LOG = []                       # (time, kind, book, plate)
 _PNG = {}
 
@@ -48,7 +49,7 @@ def _handler(route):
         return route.fulfill(status=200, content_type="application/json", body=json.dumps(body))
     if rest == "/comic-pages":
         LOG.append((time.time(), "list", bid, None))
-        pages = [f"p_{k}.png" for k in range(PLATES[bid])]
+        pages = NAMES.get(bid) or [f"p_{k}.png" for k in range(PLATES[bid])]
         return route.fulfill(status=200, content_type="application/json",
                              body=json.dumps({"pages": pages, "total": len(pages), "content_version": f"v{bid}"}))
     pm = re.match(r"/comic-page/(\d+)$", rest)
@@ -70,6 +71,8 @@ def reader(desktop_page):
     LOG.clear()
     SIZES.clear()
     BUSY.clear()
+    NAMES.clear()
+    PLATES[920002] = 6
     page.evaluate("() => localStorage.removeItem('bookhaven.precacheChapters')")
     yield page
     page.evaluate("() => { closeReader(); localStorage.removeItem('bookhaven.precacheChapters'); }")
@@ -185,3 +188,64 @@ def test_R100_strip_refused_once_is_retried(reader):
     _open(page, 920001)                           # waits until every strip is loaded
     tries = [k for (_, k, b, p) in LOG if b == 920001 and p == 2]
     assert tries[:2] == ["busy", "page"]
+
+
+def _season(first=48, chapters=3, per=4):
+    """A complete season in one file: one folder per chapter, credits page first."""
+    out = []
+    for c in range(first, first + chapters):
+        folder = f"Chapter {c}.00 Season 2 Start" if c == first else f"Chapter {c}.00"
+        out += [f"{folder}/{k:02d}.jpg" for k in range(1, per + 1)]
+    return out
+
+
+def test_R103_season_file_reads_chapter_by_chapter(reader):
+    """A file holding a whole season (one folder per chapter) shows the chapter
+    picker and renders ONE chapter at a time; ‹ › walk its chapters, then the
+    series (previous file before its first chapter)."""
+    page = reader
+    NAMES[920002] = _season()
+    PLATES[920002] = len(NAMES[920002])
+    _open(page, 920002)
+    opts = page.eval_on_selector_all("#comic-chapter-select option", "els => els.map(e => e.textContent.trim())")
+    assert opts == ["Ch. 48", "Ch. 49", "Ch. 50"], opts
+    shown = lambda: page.eval_on_selector_all("#comic-scroll img", "els => els.map(e => +e.dataset.idx)")  # noqa: E731
+    assert shown() == [0, 1, 2, 3]                                         # chapter 48 only
+    assert "Chapitre suivant" in page.inner_text("#comic-scroll .next-chapter-btn")
+    page.click("#comic-cont-next")
+    page.wait_for_function("() => document.querySelector('#comic-scroll img')?.dataset.idx === '4'")
+    assert shown() == [4, 5, 6, 7]                                         # chapter 49
+    assert page.evaluate("() => document.getElementById('comic-container').scrollTop") == 0
+    page.click("#comic-cont-prev")                                         # back to 48
+    page.wait_for_function("() => document.querySelector('#comic-scroll img')?.dataset.idx === '0'")
+    page.click("#comic-cont-prev")                                         # before 48: previous file
+    page.wait_for_function("() => document.getElementById('reader-title').textContent === 'Ch 920001'")
+
+
+def test_R103_precache_takes_only_the_first_chapter_of_a_season_file(reader):
+    """Reading the chapter before a 500 MB season file pre-caches its first
+    chapter only, never the whole file."""
+    page = reader
+    NAMES[920002] = _season(chapters=5, per=4)
+    PLATES[920002] = len(NAMES[920002])
+    SIZES[920002] = 500 * 1024 * 1024
+    page.evaluate("() => localStorage.setItem('bookhaven.precacheChapters', '1')")
+    _open(page, 920001)
+    _wait_finished(page)
+    got = sorted({p for _, p in _pages_of(920002)})
+    assert got == [0, 1, 2, 3], got                                        # chapter 48 only (4 strips of 20)
+    plan = page.evaluate("() => comicPrecacheStatus().plan")
+    assert plan == [{"id": 920002, "upto": 4}]
+
+
+def test_R100_strip_keeps_retrying_through_a_long_overload(reader):
+    """A strip refused many times in a row (sustained overload) still shows once
+    the server recovers: retries never give up while the strip is on screen."""
+    page = reader
+    BUSY[(920001, 1)] = 5                          # 5 consecutive 503 (> the old 4-try limit)
+    page.evaluate("() => openBook(920001)")
+    page.wait_for_function("() => [...document.querySelectorAll('#comic-scroll img')].length"
+                           " && [...document.querySelectorAll('#comic-scroll img')].every(i => i.complete && i.naturalHeight)",
+                           timeout=90000)
+    tries = [k for (_, k, b, p) in LOG if b == 920001 and p == 1]
+    assert tries.count("busy") == 5 and tries[-1] == "page"

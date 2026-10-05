@@ -87,10 +87,38 @@ internal object ComicReaderLogic {
     fun wholeChapters(sizes: List<Long>, budget: Long = PRECACHE_BUDGET_BYTES): List<Boolean> {
         var left = budget
         return sizes.mapIndexed { i, size ->
-            val take = i == 0 || size <= left
+            val take = (i == 0 && size <= budget) || size <= left
             if (take) left -= size
             take
         }
+    }
+
+    // ── Chapters inside one file (same rule as the web's comicChapterKey) ────
+    private val MANHUA_PREFIX = Regex("^(\\d+)_")
+    private val FIRST_NUMBER = Regex("(\\d+(?:\\.\\d+)?)")
+
+    /**
+     * Chapter of a plate from its archive name: manhua "NNNNN_NNN.ext" -> prefix / 10;
+     * one folder per chapter ("Chapter 48.00 Season 2 Start/01.jpg") -> that folder,
+     * numbered by its first number; otherwise the whole file is one chapter ("__").
+     * Returns (key, chapter number or null).
+     */
+    fun chapterKey(name: String): Pair<String, Double?> {
+        MANHUA_PREFIX.find(name)?.let { return it.groupValues[1] to it.groupValues[1].toDouble() / 10 }
+        val slash = name.lastIndexOf('/')
+        if (slash > 0) {
+            val folder = name.substring(0, slash)
+            val num = FIRST_NUMBER.find(folder.substringAfterLast('/'))?.groupValues?.get(1)?.toDoubleOrNull()
+            return folder to num
+        }
+        return "__" to null
+    }
+
+    /** Plates of the first chapter of a file (all of them for a one-chapter file). */
+    fun firstChapterLength(names: List<String>): Int {
+        if (names.isEmpty()) return 0
+        val first = chapterKey(names[0]).first
+        return names.takeWhile { chapterKey(it).first == first }.size
     }
 
     /** Optional offline download of an upcoming chapter, within the space limits. */

@@ -2899,15 +2899,17 @@ function comicJumpToInput() {
 // Page URL. With the archive's content_version the server answers "immutable":
 // the browser HTTP cache can then serve pre-cached chapters with no request,
 // and a rebuilt archive (new version) gets a new URL.
-// A strip that failed (server busy -> 503, network blip) is retried a few times
-// with backoff instead of staying broken.
+// A strip that failed (server busy -> 503, network blip) is retried with
+// backoff (1.5 s, 3 s, 6 s, then every 10 s) for as long as it is on screen: a
+// fixed number of tries left strips missing for good after a sustained overload
+// (> ~20 s). Leaving the chapter removes the image, which ends the retries.
 function comicImgRetry(img) {
+  if (!img.isConnected) return;
   const n = parseInt(img.dataset.tries || '0', 10);
-  if (n >= 4 || !img.isConnected) return;
   img.dataset.tries = String(n + 1);
   const url = img.getAttribute('src');
   setTimeout(() => { if (img.isConnected) { img.removeAttribute('src'); img.setAttribute('src', url); } },
-             1500 * Math.pow(2, n));
+             Math.min(10000, 1500 * Math.pow(2, n)));
 }
 
 function comicPageUrl(bookId, i, version) {
@@ -2951,7 +2953,7 @@ function comicStopPrecache() {
 // Observable state (tests, debugging): books targeted, queued/done counts.
 function comicPrecacheStatus() {
   const j = _comicPrecache;
-  return j ? { running: !j.cancelled, books: j.books.slice(), whole: (j.whole || []).slice(),
+  return j ? { running: !j.cancelled, books: j.books.slice(), whole: (j.whole || []).slice(), plan: j.plan || [],
                queued: j.queued, done: j.done, finished: j.finished, stoppedSlow: !!j.stoppedSlow }
            : { running: false, books: [], whole: [], queued: 0, done: 0, finished: false };
 }
@@ -2983,18 +2985,26 @@ async function comicStartPrecache(book) {
       if (job.cancelled) return;
       if (!r.ok) continue;
       const d = await r.json();
-      lists.push({ id: b.id, n: (d.pages || []).length, v: d.content_version || '', size: b.file_size || 0 });
+      const pages = d.pages || [];
+      // A file holding several chapters (a complete season...) is only needed up
+      // to the end of its FIRST chapter to open instantly: never pre-cache it all.
+      const chs = comicBuildChapters(pages);
+      const target = chs.length > 1 ? chs[0].idxs.length : pages.length;
+      const size = b.file_size || 0;
+      lists.push({ id: b.id, n: pages.length, target, v: d.content_version || '',
+                   size: pages.length ? Math.round(size * target / pages.length) : size });
     }
     let budget = COMIC_PRECACHE_BUDGET;
-    lists.forEach((l, idx) => {           // the next chapter is always taken whole
-      l.whole = idx === 0 || l.size <= budget;
+    lists.forEach((l, idx) => {           // the next chapter whole if it fits the budget
+      l.whole = (idx === 0 && l.size <= COMIC_PRECACHE_BUDGET) || l.size <= budget;
       if (l.whole) budget -= l.size;
     });
+    job.plan = lists.map(l => ({ id: l.id, upto: l.whole ? l.target : Math.min(COMIC_PRECACHE_FIRST, l.n) }));
     job.whole = lists.filter(l => l.whole).map(l => l.id);
     // 3. Queue: first strips of every chapter, then the rest chapter by chapter.
     const queue = [];
     lists.forEach(l => { for (let i = 0; i < Math.min(COMIC_PRECACHE_FIRST, l.n); i++) queue.push([l, i]); });
-    lists.forEach(l => { if (l.whole) for (let i = COMIC_PRECACHE_FIRST; i < l.n; i++) queue.push([l, i]); });
+    lists.forEach(l => { if (l.whole) for (let i = COMIC_PRECACHE_FIRST; i < l.target; i++) queue.push([l, i]); });
     job.queued = queue.length;
     for (const [l, i] of queue) {
       if (job.cancelled) return;
@@ -3049,14 +3059,31 @@ function comicDetectWebtoon(bookId) {
   return Promise.all(Array.from({ length: n }, (_, i) => probe(i))).then(comicIsWebtoonDims);
 }
 
+// Chapter of a plate, from its archive name:
+//  - manhua plates "NNNNN_NNN.ext": 5-digit prefix / 10 (01725_003.jpg -> 172.5);
+//  - one folder per chapter, e.g. a complete season in one file:
+//    "Chapter 48.00 Season 2 Start/01.jpg" -> chapter 48 (first number of the folder);
+//  - otherwise the whole file is one chapter.
+// Same rule in the Android app (ComicReaderLogic.chapterKey).
+function comicChapterKey(name) {
+  const m = /^(\d+)_/.exec(name);
+  if (m) return { key: m[1], num: parseInt(m[1], 10) / 10 };
+  const slash = name.lastIndexOf('/');
+  if (slash > 0) {
+    const folder = name.slice(0, slash);
+    const n = /(\d+(?:\.\d+)?)/.exec(folder.split('/').pop());
+    return { key: folder, num: n ? parseFloat(n[1]) : null };
+  }
+  return { key: '__', num: null };
+}
+
 function comicBuildChapters(pages) {
   const chaps = [];
   let cur = null;
   pages.forEach((name, i) => {
-    const m = /^(\d+)_/.exec(name);
-    const key = m ? m[1] : '__';
-    if (!cur || cur.key !== key) {
-      cur = { key, num: m ? (parseInt(m[1], 10) / 10) : (chaps.length + 1), idxs: [] };
+    const k = comicChapterKey(String(name));
+    if (!cur || cur.key !== k.key) {
+      cur = { key: k.key, num: k.num != null ? k.num : (chaps.length + 1), idxs: [] };
       chaps.push(cur);
     }
     cur.idxs.push(i);

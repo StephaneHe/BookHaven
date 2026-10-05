@@ -262,12 +262,10 @@ class ComicReaderFragment : Fragment() {
         var cur: MutableList<Int>? = null
         var curKey = ""
         pages.forEachIndexed { i, name ->
-            val m = Regex("^(\\d+)_").find(name)
-            val key = m?.groupValues?.get(1) ?: "__"
+            val (key, n) = ComicReaderLogic.chapterKey(name)
             if (cur == null || curKey != key) {
                 val idxs = mutableListOf<Int>()
-                val num = m?.groupValues?.get(1)?.toDoubleOrNull()?.div(10) ?: (out.size + 1).toDouble()
-                out.add(Chapter(key, num, idxs))
+                out.add(Chapter(key, n ?: (out.size + 1).toDouble(), idxs))
                 cur = idxs; curKey = key
             }
             cur!!.add(i)
@@ -406,8 +404,11 @@ class ComicReaderFragment : Fragment() {
                 val resp = runCatching { api.getComicPages(ref.id) }.getOrNull() ?: continue
                 sources[ref.id] = ComicPageSource(appCtx, ref.id, api,
                                                   null, resp.contentVersion, resp.pages)
-                counts.add(ref.id to resp.pages.size)
-                sizes.add(ref.fileSize)
+                // A multi-chapter file (complete season...) is only needed up to the
+                // end of its FIRST chapter to open instantly: never cache it all.
+                val target = ComicReaderLogic.firstChapterLength(resp.pages)
+                counts.add(ref.id to target)
+                sizes.add(if (resp.pages.isEmpty()) ref.fileSize else ref.fileSize * target / resp.pages.size)
             }
             // 3. Warm the page cache: first strips of every chapter, then the rest.
             for ((id, page) in ComicReaderLogic.precacheQueue(

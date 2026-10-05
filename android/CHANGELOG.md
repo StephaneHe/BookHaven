@@ -1,5 +1,16 @@
 # Changelog — BookHaven Android
 
+## [1.12.0] - 2026-10-05
+
+### Added
+- **Fichiers « saison complète »** (un dossier par chapitre) lus chapitre par chapitre,
+  même règle que le web 2.12.0 (`ComicReaderLogic.chapterKey`).
+
+### Changed
+- Pré-cache : seul le premier chapitre d'un fichier multi-chapitres est préchargé ; le
+  chapitre suivant n'est plus pris entier s'il dépasse le budget de 400 Mo.
+- versionCode 71, versionName 1.12.0. APK buildé.
+
 ## [1.11.0] - 2026-10-04
 
 ### Added
